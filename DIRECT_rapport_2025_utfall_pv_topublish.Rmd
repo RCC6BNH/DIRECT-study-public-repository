@@ -1,0 +1,2694 @@
+---
+title: "DIRECT 2025 final outcomes on uptake - Pathogenic Variants"
+author: "DIRECT study"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r lasindata, include=FALSE}
+
+#libraries
+library(readxl)
+library(tidyr)
+library(sjPlot)
+library(sjlabelled)
+library(sjmisc)
+library(ggplot2)
+library(tidyverse)
+library(lubridate)
+library(plyr)
+library(dplyr)
+library(hrbrthemes)
+library(kableExtra)
+library(lme4)
+library(parameters) 
+library(grid)
+library(ggeffects)
+
+# Import data from the study database (general study data)
+Individinfo <- read_excel("Individinfo.xlsx")
+
+# Import data from the study database (questionnaire data reported digitally)
+enkat1177 <- read_excel("Enkatsvar_enkat1_1177_ny.xlsx")
+
+# Import data from the study database (questionnaire data reported on paper)
+enkatbrev <- read_excel("Enkatsvar_enkat1_papper.xlsx")
+
+
+names(Individinfo) <- tolower(names(Individinfo))
+names(enkat1177) <- tolower(names(enkat1177))
+names(enkatbrev) <- tolower(names(enkatbrev))
+
+
+# Exclude the excluded study site
+Individinfo <- Individinfo[!(Individinfo$studieort_individ %in% "X"),]
+
+# Create subset with relevant variables
+Individinfo <- Individinfo %>% 
+  select( c("enkatnr","personnummer", "studieort_individ","directid", "samtycke_datum_crf1",
+           "cancerdiagnos_crf1", "familjediagnos_crf1","studiegrupp_crf1", "pv_gen_crf1",
+           "a_antal_totalt_berord_slaktingar", 
+           "a_antal_kvinnor_berorda", "a_antal_man_berorda", "a_antal_kon_okant_berorda",
+           "aa_ant_fgr", "aa_ant_ovriga", 
+           "aa_ant_som_kan_foljas_upp", "aa_ant_kvinnor_som_kan_foljas_upp", 
+           "aa_ant_man_som_kan_foljas_upp","aa_ant_fgr_som_kan_foljas_upp", "aa_ant_ovriga_som_kan_foljas_upp",
+           "b_antal_godkanda_direct-brev", "b_antal_godkanda_direct-brev",
+           "b_antal_godkanda_direct-brev_tillkvinnor", "b_antal_godkanda_direct-brev_tillman",
+           "b_antal_godkanda_direct-brev_tillfgr", "b_antal_godkanda_direct-brev_tillovriga",
+           "b_antal_hort_av_sig_innan_brev", "b_antal_kvinnor_av_sig_innan_brev",
+           "b_antal_man_av_sig_innan_brev", "b_antal_fgr_av_sig_innan_brev",
+           "b_antal_ovriga_av_sig_innan_brev",
+           "b_antal_saknar_adress", 
+           "c_antal_brev_faktiskt_skickade", "c_antal_brev_faktiskt_skickade_tillkvinnor",
+           "c_antal_brev_faktiskt_skickade_tillman", "c_antal_brev_faktiskt_skickade_tillfgr",
+           "c_antal_brev_faktiskt_skickade_tillovriga",
+           "d_antal_brev_hamtade_fr_postombud", "d_antal_brev_hamtade_fr_postombud_avkvinnor",
+           "d_antal_brev_hamtade_fr_postombud_avman","d_antal_brev_hamtade_fr_postombud_avfgr",
+           "d_antal_brev_hamtade_fr_postombud_avovriga",    
+           "dd_antal_totalt_brevmottagare_kontaktat_efterbrev", "dd_antal_kvinnor_brevmottagare_kontaktat_efterbrev",
+           "dd_antal_man_brevmottagare_kontaktat_efterbrev", "dd_antal_fdr_brevmottagare_kontaktat_efterbrev",
+           "dd_antal_ovriga_brevmottagare_kontaktat_efterbrev", 
+           "e_antal_total_kontaktat_klinik", "e_antal_kvinnor_kontaktat_klinik",
+           "e_antal_man_kontaktat_klinik", 
+           "ee_ant_fdr_kontaktat", "ee_ant_ovrigt_kontaktat", "exkluderade", "indikationtest_crf1",
+           "bb_antal_godkanda_directbrev_tilluppfoljbara",
+           "bb_antal_godkanda_directbrev_tilluppfoljbara_ovriga",
+           "bb_antal_godkanda_directbrev_tilluppfoljbara_kvinnor",
+           "bb_antal_godkanda_directbrev_tilluppfoljbara_man",
+           "bb_antal_godkanda_directbrev_tilluppfoljbara_fgr",
+           "bb_antal_godkanda_directbrev_tilluppfoljbara_ovriga",
+           "bb_antal_hort_av_sig_utan_brev") )
+
+
+# Exclude excluded individuals 
+Individinfo <- Individinfo[Individinfo$exkluderade %in% "Nej",]
+
+
+# Create new variables
+## age
+Individinfo$alder <- interval(ymd(substr(Individinfo$personnummer,1,8)),
+                              ymd(Individinfo$samtycke_datum_crf1))/years(1)
+## age categories
+Individinfo$age_cat <- cut(Individinfo$alder,breaks=c(0,49,200))
+Individinfo$age_cat <- as.character(Individinfo$age_cat)
+Individinfo$age_cat[Individinfo$age_cat %in% "(0,49]"] <- "younger"
+Individinfo$age_cat[Individinfo$age_cat %in% "(49,200]"] <- "older"
+
+## sex
+Individinfo$sex <- "woman"
+Individinfo$sex[substr(Individinfo$personnummer,12,12) %in% c(1,3,5,7,9)] <- "man"
+
+# Add educational level from the questionnaire data 
+enkat1177 <- enkat1177[c("personnummer","vilken högsta utbildning har du?")]
+names(enkat1177) <- c("personnummer", "utbildning")
+enkatbrev <- enkatbrev[c("enkat_serie_nummer", "utbildning")]
+names(enkatbrev) <- c("enkatnr", "utbildning1")
+
+enkatbrev$utbildning1 <- as.character(enkatbrev$utbildning1)
+
+enkatbrev <- enkatbrev %>% 
+  mutate(utbildning = case_when(
+                      utbildning1 == "0"  ~ NA,
+                      utbildning1 == "1"  ~ "Mindre än 9 års skolgång",
+                      utbildning1 == "2"  ~ "Avslutad grundskola eller motsvarande 9 års skolgång",
+                      utbildning1 == "3"  ~ "Avslutat gymnasium eller motsvarande 12 års skolgång",
+                      utbildning1 == "4"  ~ "Utbildning minst 1 år utöver gymnasium",
+                      utbildning1 == "5"  ~ "Examen från universitet eller högskola",
+                      TRUE ~ utbildning1
+                      ) )
+
+enkatbrev <- enkatbrev[c("enkatnr", "utbildning")]
+
+enkat1177$utbildning[enkat1177$utbildning %in%  "N/A" ] <- NA
+
+temp <- Individinfo[c("personnummer", "enkatnr")]
+
+enkatbrev <- merge(enkatbrev, temp, by = "enkatnr", all.x=TRUE)
+enkatbrev <- enkatbrev[c("personnummer","utbildning")]
+
+enkat <- rbind(enkat1177, enkatbrev)
+enkat <- enkat[!(enkat$utbildning %in% NA),]
+enkat <- enkat[!(enkat$personnummer %in% NA),]
+
+Individinfo <- merge(Individinfo, enkat, by="personnummer", all.x=TRUE)
+Individinfo <- Individinfo[duplicated(Individinfo$directid) %in% FALSE,]
+
+
+# Define the terms used for the family diagnoses
+namnbrca <- "HBOC" #"PV BRCA1, BRCA2, PALB2"
+namnlynch <- "Lynch syndrome" #"PV MLH1, MSH2, MSH6, PMS2"
+
+
+```
+
+
+
+# Descriptive data
+
+## Inclusion over time
+
+Cumulative number of families i.e. number of index individuals.
+
+### Inclusion by study group
+
+```{r inclusionplot1a, echo=FALSE, warning=FALSE, fig.height=3}
+
+kont <- c(as.Date(Individinfo$samtycke_datum_crf1[Individinfo$studiegrupp_crf1 %in% "Kontroll" &
+                                                    substr(Individinfo$directid,5,6) %in% "01"]))
+
+stud <- c(as.Date(Individinfo$samtycke_datum_crf1[Individinfo$studiegrupp_crf1 %in% "Intervention" &
+                                                    substr(Individinfo$directid,5,6) %in% "01"]))
+
+datfraga <- c( stud, kont )
+
+grupp <- c(rep("Intervention", length(stud)), rep("Control", length(kont)) )
+      
+
+
+df <- data.frame(datfraga, grupp)
+df <- df[order(df$datfraga),]
+df <- df[order(df$grupp),]
+
+df$N <- rep(1, length(df$grupp))
+
+df$cumN <- c(
+  cumsum( df$N[df$grupp %in% "Control"] ),
+  cumsum( df$N[df$grupp %in% "Intervention"] )
+  )
+
+df$cumN <- as.numeric(df$cumN)
+df$datfraga <- ymd(df$datfraga)
+   
+names(df) <- c("Year", "Group", "N", "Cumulative")
+
+
+
+ ggplot(df, aes(x = Year, y = Cumulative )) + 
+   geom_line(aes(color = Group), linewidth = 1) +
+   scale_color_manual(values = c( "seagreen3", "black")) +
+   scale_y_continuous(name="Number of included patients") +
+   scale_x_date(
+    date_breaks = "1 year",               # Breaks at 1-year intervals
+    date_labels = "%Y",                   # Full year format
+    limits = as.Date(c("2020-01-01", "2024-02-01")) # Extend the range
+  ) +
+   theme_minimal()+
+  theme(legend.position = "bottom") 
+
+```
+
+
+
+
+### Inclusion by family diagnosis
+
+```{r inclusionplot1bextra1a, echo=FALSE, warning=FALSE, fig.height=3}
+
+Individinfo_urval <- Individinfo[order(Individinfo$samtycke_datum_crf1),]
+Individinfo_urval <- Individinfo_urval[substr(Individinfo$directid,5,6) %in% "01",]
+
+BRCAPALB2 <- c(as.Date(Individinfo_urval$samtycke_datum_crf1[
+  Individinfo_urval$familjediagnos_crf1 %in% c("BRCA och PALB2")]))
+
+Lynch <- c(as.Date(Individinfo_urval$samtycke_datum_crf1[
+  Individinfo_urval$familjediagnos_crf1 %in% c("Lynch")]))
+
+FamBC <- c(as.Date(Individinfo_urval$samtycke_datum_crf1[
+  Individinfo_urval$familjediagnos_crf1 %in% c("Familjär bröstcancer")]))
+
+FamCRC <- c(as.Date(Individinfo_urval$samtycke_datum_crf1[
+  Individinfo_urval$familjediagnos_crf1 %in% c("Familjär CRC")]))
+
+total <- c(as.Date(Individinfo_urval$samtycke_datum_crf1))
+
+#total, 
+datfraga <- c( FamCRC, FamBC, Lynch, BRCAPALB2 )
+
+#rep("Totalt", length(total)),
+grupp <- c( rep("Familjär CRC", length(FamCRC)), rep("Familjär Bröstcancer", length(FamBC)), 
+            rep("Lynch", length(Lynch)),rep("BRCA PALB2", length(BRCAPALB2)) )
+      
+
+
+df <- data.frame(datfraga, grupp)
+df <- df[order(df$datfraga),]
+df <- df[order(df$grupp),]
+
+df$N <- rep(1, length(df$grupp))
+
+df$cumN <- c(
+  cumsum( df$N[df$grupp %in% "BRCA PALB2"] ),
+  cumsum( df$N[df$grupp %in% "Familjär Bröstcancer"]),
+  cumsum( df$N[df$grupp %in% "Familjär CRC"]),
+  cumsum( df$N[df$grupp %in% "Lynch"] )#,
+#  cumsum( df$N[df$grupp %in% "Totalt"] )
+    )
+
+   
+names(df) <- c("Datum", "Familjediagnos", "N", "Kumulativt")
+
+df$Familjediagnos[df$Familjediagnos %in% "Lynch"] <- namnlynch
+df$Familjediagnos[df$Familjediagnos %in% "BRCA PALB2"] <- namnbrca
+df$Familjediagnos[df$Familjediagnos %in% "Familjär CRC"] <- 'Familial CRC'
+df$Familjediagnos[df$Familjediagnos %in% "Familjär Bröstcancer"] <- 'Familial BC'
+
+
+df$Familjediagnos <- factor(df$Familjediagnos, 
+                            levels= c("Totalt", namnbrca, namnlynch,  
+                                      "Familial BC", "Familial CRC") )
+
+
+#c("black",  "royalblue1", "coral3", "greenyellow" ,"pink")   
+
+ggplot(df, aes(x = Datum, y = Kumulativt )) + 
+  geom_line(aes(color = Familjediagnos), size = 1) +
+  labs(title = "", x = "Year", y = "Inclusion", color = NULL) +
+  scale_color_manual(values = c( "#FFA07A", "#ADD8E6", "midnightblue", "#8B0000" )) +
+   scale_y_continuous(name="Number of included patients") +
+  scale_x_date(
+    date_breaks = "1 year",               # Breaks at 1-year intervals
+    date_labels = "%Y",                   # Full year format
+    limits = as.Date(c("2020-01-01", "2024-02-01")) # Extend the range
+  ) +
+    theme_minimal()+
+  theme(legend.position = "bottom") 
+
+# 
+
+```
+
+\pagebreak
+
+
+# Selection at this point and onwards
+
+Only the index individual of each family.    
+
+Pathogenic variants (family diagnosis BRCA1, BRCA2, PALB2, MLH1, MSH2, MSH6, PMS2).
+
+
+
+```{r selection1a, echo=FALSE, warning=FALSE, fig.height=3}
+
+Individinfo <- Individinfo[
+  substr(Individinfo$directid,5,6) %in% "01" & 
+    Individinfo$familjediagnos_crf1 %in% c("BRCA och PALB2", "Lynch"),]
+
+```
+
+
+\pagebreak
+
+# Family size
+
+
+Defined as number of ARRs of index.
+
+
+```{r famsize1b, echo=FALSE, warning=FALSE, fig.height=3}
+
+Individinfo_urval <- Individinfo
+
+ut <- data.frame(table(Individinfo_urval$aa_ant_som_kan_foljas_upp, Individinfo_urval$studiegrupp_crf1))
+colnames(ut) <- c("Size", "Group", "N")
+ut$Size <- as.numeric(as.vector(ut$Size))
+ut$N <- as.numeric(as.vector(ut$N))
+
+ggplot(data=ut, aes(x=Size, y=N, fill=Group)) +
+  geom_bar(stat="identity", position=position_dodge())+
+  scale_fill_brewer(palette="Paired")+
+  theme_minimal()
+
+summary(Individinfo_urval$aa_ant_som_kan_foljas_upp)
+
+```
+
+
+
+
+\pagebreak
+
+# Figure: Number of ARRs total and who contacted
+
+
+## Intervention group
+
+```{r famsize2a, echo=FALSE, warning=FALSE, fig.height=3.5}
+
+
+maxx <- max(length(Individinfo$directid[Individinfo$studiegrupp_crf1 %in% "Intervention"]),
+            length(Individinfo$directid[Individinfo$studiegrupp_crf1 %in% "Kontroll"]))
+
+
+Individinfo_urval <- Individinfo[Individinfo$studiegrupp_crf1 %in% "Intervention" ,]
+
+Individinfo_urval <- Individinfo_urval[order(as.numeric(Individinfo_urval$aa_ant_som_kan_foljas_upp), 
+                                             decreasing = TRUE),]
+tempN <- length(Individinfo_urval$directid)
+Individinfo_urval$id <- 1:tempN
+
+maxy <- max(as.numeric(Individinfo_urval$aa_ant_som_kan_foljas_upp), na.rm = TRUE)
+
+
+Individinfo_urval$ejkontakt <- Individinfo_urval$aa_ant_som_kan_foljas_upp - 
+  Individinfo_urval$e_antal_total_kontaktat_klinik
+
+Individinfo_urval <- Individinfo_urval[c("id", "aa_ant_som_kan_foljas_upp",
+                                         "e_antal_total_kontaktat_klinik", "ejkontakt" )]
+
+ut <- rbind( cbind(Individinfo_urval$id, Individinfo_urval$e_antal_total_kontaktat_klinik, "contacted"), 
+            cbind(Individinfo_urval$id, Individinfo_urval$ejkontakt, "not contacted") )
+names(ut) <- c("id", "N", "status")
+ut <- data.frame(ut)
+names(ut) <- c("id", "N", "status")
+ut$N <- as.numeric(ut$N)
+ut$status <- factor(ut$status,levels = c("not contacted", "contacted"))
+ut$id <- factor(ut$id, levels=1:tempN)
+
+ut_i <- ut
+
+ggplot(data=ut, aes(x=id, y=N, fill=status)) +
+  geom_bar(stat="identity") +
+  scale_fill_brewer(palette="Paired")+
+  theme_classic() +
+  ylim(0,maxy) +
+  theme(axis.text.y=element_blank(), axis.ticks.y=element_blank()) + 
+  coord_flip() 
+  
+```
+
+
+## Control group
+
+```{r famsize2b, echo=FALSE, warning=FALSE, fig.height=3.5}
+
+maxy <- max(as.numeric(Individinfo_urval$aa_ant_som_kan_foljas_upp), na.rm = TRUE)
+
+
+Individinfo_urval <- Individinfo[Individinfo$studiegrupp_crf1 %in% "Kontroll" &
+                                   !(Individinfo$aa_ant_som_kan_foljas_upp %in% NA),]
+
+Individinfo_urval <- Individinfo_urval[order(as.numeric(Individinfo_urval$aa_ant_som_kan_foljas_upp), 
+                                             decreasing = TRUE),]
+tempN <- length(Individinfo_urval$directid)
+Individinfo_urval$id <- 1:tempN
+
+Individinfo_urval$ejkontakt <- Individinfo_urval$aa_ant_som_kan_foljas_upp - 
+  Individinfo_urval$e_antal_total_kontaktat_klinik
+
+Individinfo_urval <- Individinfo_urval[c("id", "aa_ant_som_kan_foljas_upp",
+                                         "e_antal_total_kontaktat_klinik", "ejkontakt" )]
+
+ut <- rbind( cbind(Individinfo_urval$id, Individinfo_urval$e_antal_total_kontaktat_klinik, "contacted"), 
+            cbind(Individinfo_urval$id, Individinfo_urval$ejkontakt, "not contacted") )
+names(ut) <- c("id", "N", "status")
+ut <- data.frame(ut)
+names(ut) <- c("id", "N", "status")
+ut$N <- as.numeric(ut$N)
+ut$status <- factor(ut$status,levels = c("not contacted", "contacted"))
+ut$id <- factor(ut$id, levels=1:tempN)
+
+ut_c <- ut
+
+ggplot(data=ut, aes(x=id, y=N, fill=status)) +
+  geom_bar(stat="identity") +
+  scale_fill_brewer(palette="Paired")+
+  theme_classic()  + 
+  ylim(0,maxy) +
+  theme(axis.text.y=element_blank(), axis.ticks.y=element_blank()) + 
+  coord_flip()
+
+
+```
+
+
+## Combined
+
+```{r famsize2c, echo=FALSE, warning=FALSE, fig.height=3.5}
+
+
+# Assign group and adjust N values for back-to-back
+ut1 <- ut_c %>% mutate(group = "Control", N = -N) # Make values negative for Group 1
+ut2 <- ut_i %>% mutate(group = "Intervention")         # Keep values positive for Group 2
+
+# Combine the datasets
+ut_combined <- bind_rows(ut1, ut2)
+
+
+p <- ggplot(ut_combined, aes(x = id, y = N, fill = status)) +
+  geom_bar(stat = "identity") +
+  scale_fill_brewer(palette = "Paired", labels = c("did not contact","contacted")) +
+  coord_flip() + # Flip the axes for horizontal bars
+  theme_classic() +
+  theme(
+    axis.text.y = element_blank(), # Remove text labels from y-axis
+    axis.ticks.y = element_blank(), # Remove ticks from y-axis
+    axis.line.y = element_blank() # Remove the actual y-axis line
+  ) +
+  geom_hline(yintercept = 0, color = "black", linetype = "solid") + # Add a vertical line at x = 0
+  annotate("text", x = 80, y = -max(ut_combined$N) * 0.8, label = "Control", size = 5, hjust = 0) + # Left heading
+  annotate("text", x = 80, y = max(ut_combined$N) * 0.8, label = "Intervention", size = 5, hjust = 1) + # Right heading
+  scale_y_continuous( # Change the numeric axis (bottom axis in the plot)
+    breaks = c(-10, 0, 10, 20), # Define breaks
+    labels = c("10", "0", "10", "20") # Custom labels
+  ) +
+  labs(
+    x = NULL, # Remove x-axis label
+    y = NULL, # Remove y-axis label
+    title = "",
+    fill = "" # Remove legend title
+  )
+
+p
+
+
+```
+
+\pagebreak
+
+
+# Comparing family sizes of Intervention and Control group
+
+Boxplot and test. The distribution is non-normal (se plot, also Shapiro-Wilk normality test p < 0.001), 
+so we use the Wilcoxon rank sum test. 
+
+```{r comparemeans1a, echo=FALSE, warning=FALSE}
+
+ggplot(Individinfo) +
+  aes(x = studiegrupp_crf1, y = aa_ant_som_kan_foljas_upp) +
+  geom_boxplot(fill = "#a6cee3") +
+  theme_minimal()
+
+
+wilcox.test(Individinfo$aa_ant_som_kan_foljas_upp ~ Individinfo$studiegrupp_crf1)
+
+```
+
+
+\pagebreak
+
+
+# Table 1: Descriptives
+
+
+```{r descriptive1aa, echo=FALSE, warning=FALSE}
+
+
+
+Individinfo_urval <- Individinfo
+
+#total
+total_n <- c( length(Individinfo_urval$alder[Individinfo_urval$studiegrupp_crf1 %in% "Intervention" ]),
+          length(Individinfo_urval$alder[Individinfo_urval$studiegrupp_crf1 %in% "Kontroll"]) )
+
+#means
+age <- c( round(mean(Individinfo_urval$alder[Individinfo_urval$studiegrupp_crf1 %in% "Intervention" ],na.rm =TRUE)),
+          round(mean(Individinfo_urval$alder[Individinfo_urval$studiegrupp_crf1 %in% "Kontroll"],na.rm =TRUE) ) )
+
+mage <- c( paste(round(median(Individinfo_urval$alder[Individinfo_urval$studiegrupp_crf1 %in% "Intervention" ],
+                              na.rm =TRUE)),
+                 paste(round(range(Individinfo_urval$alder[Individinfo_urval$studiegrupp_crf1 %in% "Intervention" ])),
+                       collapse = "-") ),
+         paste(round(median(Individinfo_urval$alder[Individinfo_urval$studiegrupp_crf1 %in% "Kontroll" ],
+                            na.rm =TRUE)),
+                 paste(round(range(Individinfo_urval$alder[Individinfo_urval$studiegrupp_crf1 %in% "Kontroll" ])),
+                       collapse = "-") ) ) 
+
+arrperindex <- c( round(sum(Individinfo_urval$aa_ant_som_kan_foljas_upp[
+  Individinfo_urval$studiegrupp_crf1 %in% "Intervention"])/
+    length(Individinfo$aa_ant_som_kan_foljas_upp[
+      Individinfo_urval$studiegrupp_crf1 %in% "Intervention"]),digits=2),
+  round(sum(Individinfo$aa_ant_som_kan_foljas_upp[
+    Individinfo_urval$studiegrupp_crf1 %in% "Kontroll"])/
+      length(Individinfo$aa_ant_som_kan_foljas_upp[
+        Individinfo_urval$studiegrupp_crf1 %in% "Kontroll"]),digits=2) )
+
+arrperindex_median <- c( paste(round(median(Individinfo_urval$aa_ant_som_kan_foljas_upp[
+  Individinfo_urval$studiegrupp_crf1 %in% "Intervention" ], 
+  na.rm =TRUE)),
+  paste(round(range(Individinfo_urval$aa_ant_som_kan_foljas_upp[
+    Individinfo_urval$studiegrupp_crf1 %in% "Intervention" ])), 
+    collapse = "-") ),
+  paste(round(median(Individinfo_urval$aa_ant_som_kan_foljas_upp[
+    Individinfo_urval$studiegrupp_crf1 %in% "Kontroll" ],
+    na.rm =TRUE)),
+    paste(round(range(Individinfo_urval$aa_ant_som_kan_foljas_upp[
+      Individinfo_urval$studiegrupp_crf1 %in% "Kontroll" ])),
+      collapse = "-") ) ) 
+
+#rest of table
+temp <- round(table(Individinfo_urval$sex, Individinfo_urval$studiegrupp_crf1)/ 
+  rep(colSums(table(Individinfo_urval$sex, Individinfo_urval$studiegrupp_crf1)), 
+      each=2),digits=2)
+temp_n <- table(Individinfo_urval$sex, Individinfo_urval$studiegrupp_crf1)
+sex <- rbind( c(paste(temp_n[1,1], temp[1,1]), paste(temp_n[1,2], temp[1,2]) ),
+       c(paste(temp_n[2,1], temp[2,1]), paste(temp_n[2,2], temp[2,2]) ) )
+
+
+temp <-  round(table(Individinfo_urval$studieort_individ, Individinfo_urval$studiegrupp_crf1)/ 
+  rep(colSums(table(Individinfo_urval$studieort_individ, Individinfo_urval$studiegrupp_crf1)),each=3),digits=2)
+temp_n <- table(Individinfo_urval$studieort_individ, Individinfo_urval$studiegrupp_crf1)
+site <- rbind( c(paste(temp_n[1,1], temp[1,1]), paste(temp_n[1,2], temp[1,2]) ),
+       c(paste(temp_n[2,1], temp[2,1]), paste(temp_n[2,2], temp[2,2]) ),
+        c(paste(temp_n[3,1], temp[3,1]), paste(temp_n[3,2], temp[3,2]) ))
+
+
+
+temp <- round(table(Individinfo_urval$pv_gen_crf1, Individinfo_urval$studiegrupp_crf1)/ 
+  rep(colSums(table(Individinfo_urval$pv_gen_crf1, Individinfo_urval$studiegrupp_crf1)),each=7),digits=2)
+temp_n <- table(Individinfo_urval$pv_gen_crf1, Individinfo_urval$studiegrupp_crf1)
+gen <- rbind( c(paste(temp_n[1,1], temp[1,1]), paste(temp_n[1,2], temp[1,2]) ),
+       c(paste(temp_n[2,1], temp[2,1]), paste(temp_n[2,2], temp[2,2]) ),
+        c(paste(temp_n[3,1], temp[3,1]), paste(temp_n[3,2], temp[3,2]) ),
+        c(paste(temp_n[4,1], temp[4,1]), paste(temp_n[4,2], temp[4,2]) ),
+        c(paste(temp_n[5,1], temp[5,1]), paste(temp_n[5,2], temp[5,2]) ),
+        c(paste(temp_n[6,1], temp[6,1]), paste(temp_n[6,2], temp[6,2]) ),
+        c(paste(temp_n[7,1], temp[7,1]), paste(temp_n[7,2], temp[7,2]) ))
+
+
+temp <- round(table(Individinfo_urval$familjediagnos_crf1, Individinfo_urval$studiegrupp_crf1)/ 
+  rep(colSums(table(Individinfo_urval$familjediagnos_crf1, Individinfo_urval$studiegrupp_crf1)),each=2),digits=2)
+temp_n <- table(Individinfo_urval$familjediagnos_crf1, Individinfo_urval$studiegrupp_crf1)
+diagroup <- rbind( c(paste(temp_n[1,1], temp[1,1]), paste(temp_n[1,2], temp[1,2]) ),
+       c(paste(temp_n[2,1], temp[2,1]), paste(temp_n[2,2], temp[2,2]) ) )
+
+
+temp <- round(table(Individinfo_urval$indikationtest_crf1, Individinfo_urval$studiegrupp_crf1)/ 
+  rep(colSums(table(Individinfo_urval$indikationtest_crf1, Individinfo_urval$studiegrupp_crf1)),each=2),digits=2)
+temp_n <- table(Individinfo_urval$indikationtest_crf1, Individinfo_urval$studiegrupp_crf1)
+refreason <- rbind( c(paste(temp_n[1,1], temp[1,1]), paste(temp_n[1,2], temp[1,2]) ),
+       c(paste(temp_n[2,1], temp[2,1]), paste(temp_n[2,2], temp[2,2]) ) )
+
+
+temp <- round(table(Individinfo_urval$age_cat, Individinfo_urval$studiegrupp_crf1)/ 
+  rep(colSums(table(Individinfo_urval$age_cat, Individinfo_urval$studiegrupp_crf1)),each=2),digits=2)
+temp_n <- table(Individinfo_urval$age_cat, Individinfo_urval$studiegrupp_crf1)
+index_age <- rbind( c(paste(temp_n[1,1], temp[1,1]), paste(temp_n[1,2], temp[1,2]) ),
+       c(paste(temp_n[2,1], temp[2,1]), paste(temp_n[2,2], temp[2,2]) ) )
+
+
+edu <- round(table(Individinfo_urval$utbildning, Individinfo_urval$studiegrupp_crf1, 
+                   useNA = "always")/ 
+  rep(colSums(table(Individinfo_urval$utbildning, Individinfo_urval$studiegrupp_crf1, 
+                    useNA = "always")),each=6),digits=2)
+temp <- edu[,1:2]
+temp_n <- table(Individinfo_urval$utbildning, Individinfo_urval$studiegrupp_crf1, 
+                useNA = "always")
+temp_n <- temp_n[,1:2]
+edu <- rbind( c(paste(temp_n[1,1], temp[1,1]), paste(temp_n[1,2], temp[1,2]) ),
+       c(paste(temp_n[2,1], temp[2,1]), paste(temp_n[2,2], temp[2,2]) ),
+        c(paste(temp_n[3,1], temp[3,1]), paste(temp_n[3,2], temp[3,2]) ),
+        c(paste(temp_n[4,1], temp[4,1]), paste(temp_n[4,2], temp[4,2]) ),
+        c(paste(temp_n[5,1], temp[5,1]), paste(temp_n[5,2], temp[5,2]) ),
+        c(paste(temp_n[6,1], temp[6,1]), paste(temp_n[6,2], temp[6,2]) ))
+
+temp <- rbind( c(round(sum(Individinfo_urval$aa_ant_kvinnor_som_kan_foljas_upp[
+  Individinfo_urval$studiegrupp_crf1 %in% "Intervention"]) / 
+     sum(Individinfo_urval$aa_ant_som_kan_foljas_upp[
+  Individinfo_urval$studiegrupp_crf1 %in% "Intervention"]),digits=2),
+  round(sum(Individinfo_urval$aa_ant_kvinnor_som_kan_foljas_upp[
+  Individinfo_urval$studiegrupp_crf1 %in% "Kontroll"]) / 
+     sum(Individinfo_urval$aa_ant_som_kan_foljas_upp[
+  Individinfo_urval$studiegrupp_crf1 %in% "Kontroll"]),digits=2) ),
+  c(round(sum(Individinfo_urval$aa_ant_man_som_kan_foljas_upp[
+  Individinfo_urval$studiegrupp_crf1 %in% "Intervention"]) / 
+     sum(Individinfo_urval$aa_ant_som_kan_foljas_upp[
+  Individinfo_urval$studiegrupp_crf1 %in% "Intervention"]),digits=2),
+  round(sum(Individinfo_urval$aa_ant_man_som_kan_foljas_upp[
+  Individinfo_urval$studiegrupp_crf1 %in% "Kontroll"]) / 
+     sum(Individinfo_urval$aa_ant_som_kan_foljas_upp[
+  Individinfo_urval$studiegrupp_crf1 %in% "Kontroll"]),digits=2) ) )
+
+temp_n <- rbind( c(sum(Individinfo_urval$aa_ant_kvinnor_som_kan_foljas_upp[
+  Individinfo_urval$studiegrupp_crf1 %in% "Intervention"],na.rm=TRUE) ,
+  sum(Individinfo_urval$aa_ant_kvinnor_som_kan_foljas_upp[
+  Individinfo_urval$studiegrupp_crf1 %in% "Kontroll"],na.rm=TRUE) ),
+  c(sum(Individinfo_urval$aa_ant_man_som_kan_foljas_upp[
+  Individinfo_urval$studiegrupp_crf1 %in% "Intervention"],na.rm=TRUE),
+  sum(Individinfo_urval$aa_ant_man_som_kan_foljas_upp[
+  Individinfo_urval$studiegrupp_crf1 %in% "Kontroll"],na.rm=TRUE) ) )
+
+arr_sex <- rbind( c(paste(temp_n[1,1], temp[1,1]), paste(temp_n[1,2], temp[1,2]) ),
+       c(paste(temp_n[2,1], temp[2,1]), paste(temp_n[2,2], temp[2,2]) ) )  
+    
+
+temp <- rbind( c(round(sum(Individinfo_urval$aa_ant_fgr_som_kan_foljas_upp[
+  Individinfo_urval$studiegrupp_crf1 %in% "Intervention"], na.rm=TRUE) / 
+     sum(Individinfo_urval$aa_ant_som_kan_foljas_upp[
+  Individinfo_urval$studiegrupp_crf1 %in% "Intervention"], na.rm=TRUE),digits=2),
+  round(sum(Individinfo_urval$aa_ant_fgr_som_kan_foljas_upp[
+  Individinfo_urval$studiegrupp_crf1 %in% "Kontroll"], na.rm=TRUE) / 
+     sum(Individinfo_urval$aa_ant_som_kan_foljas_upp[
+  Individinfo_urval$studiegrupp_crf1 %in% "Kontroll"], na.rm=TRUE),digits=2) ),
+  c(round(sum(Individinfo_urval$aa_ant_ovriga_som_kan_foljas_upp[
+  Individinfo_urval$studiegrupp_crf1 %in% "Intervention"], na.rm=TRUE) / 
+     sum(Individinfo_urval$aa_ant_som_kan_foljas_upp[
+  Individinfo_urval$studiegrupp_crf1 %in% "Intervention"], na.rm=TRUE),digits=2),
+  round(sum(Individinfo_urval$aa_ant_ovriga_som_kan_foljas_upp[
+  Individinfo_urval$studiegrupp_crf1 %in% "Kontroll"], na.rm=TRUE) / 
+     sum(Individinfo_urval$aa_ant_som_kan_foljas_upp[
+  Individinfo_urval$studiegrupp_crf1 %in% "Kontroll"], na.rm=TRUE),digits=2) ) )
+
+temp_n <- rbind( 
+  c( sum(Individinfo_urval$aa_ant_fgr_som_kan_foljas_upp[
+  Individinfo_urval$studiegrupp_crf1 %in% "Intervention"], na.rm=TRUE),
+  sum(Individinfo_urval$aa_ant_fgr_som_kan_foljas_upp[
+  Individinfo_urval$studiegrupp_crf1 %in% "Kontroll"], na.rm=TRUE) ),
+  c( sum(Individinfo_urval$aa_ant_ovriga_som_kan_foljas_upp[
+  Individinfo_urval$studiegrupp_crf1 %in% "Intervention"], na.rm=TRUE) ,
+  sum(Individinfo_urval$aa_ant_ovriga_som_kan_foljas_upp[
+  Individinfo_urval$studiegrupp_crf1 %in% "Kontroll"], na.rm=TRUE) ) )
+
+arr_kin <- rbind( c(paste(temp_n[1,1], temp[1,1]), paste(temp_n[1,2], temp[1,2]) ),
+       c(paste(temp_n[2,1], temp[2,1]), paste(temp_n[2,2], temp[2,2]) ) ) 
+
+
+interval <- c("","")
+
+
+Totalantal <- c(interval,interval,
+                as.vector(table(Individinfo_urval$studieort_individ)), "",
+                as.vector(table(Individinfo_urval$indikationtest_crf1)), "",
+                as.vector(table(Individinfo_urval$pv_gen_crf1)), "",
+                as.vector(table(Individinfo_urval$familjediagnos_crf1)), "",
+                as.vector(table(Individinfo_urval$sex)), "",
+                as.vector(table(Individinfo_urval$age_cat)), "",
+                c(sum(Individinfo_urval$aa_ant_kvinnor_som_kan_foljas_upp),
+                  sum(Individinfo_urval$aa_ant_man_som_kan_foljas_upp)), "",
+                 c(sum(Individinfo_urval$aa_ant_fgr_som_kan_foljas_upp), 
+                  sum(Individinfo_urval$aa_ant_ovriga_som_kan_foljas_upp)), "",
+                as.vector(table(Individinfo_urval$utbildning, useNA = "always")))
+
+ut <- cbind(
+  Totalantal,
+  rbind(mage, arrperindex, arrperindex_median, interval, site, interval, refreason, 
+        interval, gen, interval, diagroup, interval, sex, interval,index_age, interval, 
+        arr_sex, interval, arr_kin, interval, edu)
+  )
+  
+
+variable <- c("Median age","Mean ARR per index","Median ARR per index", "", 
+              "Site","","", "","Referral reason","","",
+              "Gene","","","","","","","","Family diagnosis","","","Sex","","","Age category","","", 
+              "ARR sex", "","","ARR kinship degree", "","","Education","","","","","")
+level <- c("","","","","B","C","A","","Predictive testing","Genetic testing","",
+           "BRCA1","BRCA2","MLH1","MSH2","MSH6","PALB2","PMS2" , "","HBOC","Lynch","","man","woman","",
+           "older","younger","","Women","Men","","First",">= Second","",
+           "Compulsory", "Upper secondary", "University (degree)","< 9 years", 
+           "University (>=1 year)","NA")  
+
+ut <- cbind(variable, level, ut)
+
+colnames(ut) <- c("","","Total N", "N Intervention", "N Control")
+
+knitr::kable(ut, row.names = FALSE)
+
+sum(total_n)
+
+```
+
+
+\newpage
+
+# Crude numbers for table 2
+
+Crude uptake of genetic counselling (GC) in intervention vs control.
+
+
+## Intervention
+
+```{r crudetab21ai, echo=FALSE, warning=FALSE, fig.height=2.5}
+
+
+
+gintervention <- c( 
+  sum(Individinfo$e_antal_total_kontaktat_klinik[Individinfo$studiegrupp_crf1 %in% "Intervention"]),
+  sum(Individinfo$aa_ant_som_kan_foljas_upp[Individinfo$studiegrupp_crf1 %in% "Intervention"]) )
+
+gumea <- c( 
+  sum(Individinfo$e_antal_total_kontaktat_klinik[Individinfo$studieort_individ %in% "A" &
+                                                   Individinfo$studiegrupp_crf1 %in% "Intervention"]),
+  sum(Individinfo$aa_ant_som_kan_foljas_upp[Individinfo$studieort_individ %in% "A" &
+                                                   Individinfo$studiegrupp_crf1 %in% "Intervention"]) )
+
+ggtb <- c( 
+  sum(Individinfo$e_antal_total_kontaktat_klinik[Individinfo$studieort_individ %in% "B" &
+                                                   Individinfo$studiegrupp_crf1 %in% "Intervention"]),
+  sum(Individinfo$aa_ant_som_kan_foljas_upp[Individinfo$studieort_individ %in% "B" &
+                                                   Individinfo$studiegrupp_crf1 %in% "Intervention"]) )
+
+glund <- c( 
+  sum(Individinfo$e_antal_total_kontaktat_klinik[Individinfo$studieort_individ %in% "C" &
+                                                   Individinfo$studiegrupp_crf1 %in% "Intervention"]),
+  sum(Individinfo$aa_ant_som_kan_foljas_upp[Individinfo$studieort_individ %in% "C" &
+                                                   Individinfo$studiegrupp_crf1 %in% "Intervention"]) )
+
+gwoman <- c( 
+  sum(Individinfo$e_antal_total_kontaktat_klinik[Individinfo$sex %in% "woman" &
+                                                   Individinfo$studiegrupp_crf1 %in% "Intervention"]),
+  sum(Individinfo$aa_ant_som_kan_foljas_upp[Individinfo$sex %in% "woman" &
+                                                   Individinfo$studiegrupp_crf1 %in% "Intervention"]) )
+
+gman <- c( 
+  sum(Individinfo$e_antal_total_kontaktat_klinik[Individinfo$sex %in% "man" &
+                                                   Individinfo$studiegrupp_crf1 %in% "Intervention"]),
+  sum(Individinfo$aa_ant_som_kan_foljas_upp[Individinfo$sex %in% "man" &
+                                                   Individinfo$studiegrupp_crf1 %in% "Intervention"]) )
+
+gyoung <- c( 
+  sum(Individinfo$e_antal_total_kontaktat_klinik[Individinfo$age_cat %in% "younger" &
+                                                   Individinfo$studiegrupp_crf1 %in% "Intervention"]),
+  sum(Individinfo$aa_ant_som_kan_foljas_upp[Individinfo$age_cat %in% "younger" &
+                                                   Individinfo$studiegrupp_crf1 %in% "Intervention"]) )
+
+gold <- c( 
+  sum(Individinfo$e_antal_total_kontaktat_klinik[Individinfo$age_cat %in% "older" &
+                                                   Individinfo$studiegrupp_crf1 %in% "Intervention"]),
+  sum(Individinfo$aa_ant_som_kan_foljas_upp[Individinfo$age_cat %in% "older" &
+                                                   Individinfo$studiegrupp_crf1 %in% "Intervention"]) )
+
+gbrca <- c( 
+  sum(Individinfo$e_antal_total_kontaktat_klinik[Individinfo$familjediagnos_crf1 %in% "BRCA och PALB2" &
+                                                   Individinfo$studiegrupp_crf1 %in% "Intervention"]),
+  sum(Individinfo$aa_ant_som_kan_foljas_upp[Individinfo$familjediagnos_crf1 %in% "BRCA och PALB2" &
+                                                   Individinfo$studiegrupp_crf1 %in% "Intervention"]) )
+
+glynch <- c( 
+  sum(Individinfo$e_antal_total_kontaktat_klinik[Individinfo$familjediagnos_crf1 %in% "Lynch" &
+                                                   Individinfo$studiegrupp_crf1 %in% "Intervention"]),
+  sum(Individinfo$aa_ant_som_kan_foljas_upp[Individinfo$familjediagnos_crf1 %in% "Lynch" &
+                                                   Individinfo$studiegrupp_crf1 %in% "Intervention"]) )
+
+gARRmen <- c( 
+  sum(Individinfo$e_antal_man_kontaktat_klinik[Individinfo$studiegrupp_crf1 %in% "Intervention"]),
+  sum(Individinfo$aa_ant_man_som_kan_foljas_upp[Individinfo$studiegrupp_crf1 %in% "Intervention"]) )
+
+gARRwomen <- c( 
+  sum(Individinfo$e_antal_kvinnor_kontaktat_klinik[Individinfo$studiegrupp_crf1 %in% "Intervention"]),
+  sum(Individinfo$aa_ant_kvinnor_som_kan_foljas_upp[Individinfo$studiegrupp_crf1 %in% "Intervention"]) )
+
+gdegree1 <- c( 
+  sum(Individinfo$ee_ant_fdr_kontaktat[Individinfo$studiegrupp_crf1 %in% "Intervention"]),
+  sum(Individinfo$aa_ant_fgr_som_kan_foljas_upp[Individinfo$studiegrupp_crf1 %in% "Intervention"]) )
+
+gdegree2etc <- c( 
+  sum(Individinfo$ee_ant_ovrigt_kontaktat[Individinfo$studiegrupp_crf1 %in% "Intervention"]),
+  sum(Individinfo$aa_ant_ovriga_som_kan_foljas_upp[Individinfo$studiegrupp_crf1 %in% "Intervention"]) )
+
+
+ut <- rbind( gintervention, gumea, ggtb, glund, 
+            gwoman, gman, gyoung, gold,
+            gbrca, glynch, 
+            gARRmen, gARRwomen, gdegree1, gdegree2etc )
+
+chisqpvalue <- c("","",
+                 "", "", round(chisq.test(rbind(gumea, ggtb, glund))$p.value,digits=2),
+                 "",round(chisq.test(rbind(gwoman, gman))$p.value,digits=2),
+                 "",round(chisq.test(rbind(gyoung, gold))$p.value,digits=2),
+                 "",round(chisq.test(rbind(gbrca, glynch))$p.value,digits=2),
+                 "",round(chisq.test(rbind(gARRmen, gARRwomen))$p.value,digits=4),
+                 "",round(chisq.test(rbind(gdegree1, gdegree2etc))$p.value,digits=2) )
+
+#ut <- cbind(ut, chisqpvalue)
+
+colnames(ut) <- c("Contacted", "Possible to follow up")#, "Chi2 p-value")
+rownames(ut) <- c( "Intervention", "A", "B", "C", 
+                  "Women", "Men", "Younger", "Older", 
+                  "*PV BRCA1, BRCA2, PALB2*", "*PV MLH1,MSH2, MSH6, PMS2*", 
+                  "ARR men", "ARR women", "First degree", "Other degree")
+
+percentage <- paste(round((ut[,1]/ut[,2])*100,digits=0),"%")
+
+ut <- cbind(ut, percentage)
+
+kable(ut)
+
+rm( gintervention, gumea, ggtb, glund, 
+            gwoman, gman, gyoung, gold,
+            gbrca, glynch, 
+            gARRmen, gARRwomen, gdegree1, gdegree2etc, chisqpvalue )
+s_ut <- ut
+
+```
+
+## Control
+
+```{r crudetab21ac, echo=FALSE, warning=FALSE, fig.height=2.5}
+
+gcontrol <- c( 
+  sum(Individinfo$e_antal_total_kontaktat_klinik[Individinfo$studiegrupp_crf1 %in% "Kontroll"]),
+  sum(Individinfo$aa_ant_som_kan_foljas_upp[Individinfo$studiegrupp_crf1 %in% "Kontroll"]) )
+
+
+gumea <- c( 
+  sum(Individinfo$e_antal_total_kontaktat_klinik[Individinfo$studieort_individ %in% "A" &
+                                                   Individinfo$studiegrupp_crf1 %in% "Kontroll"]),
+  sum(Individinfo$aa_ant_som_kan_foljas_upp[Individinfo$studieort_individ %in% "A" &
+                                                   Individinfo$studiegrupp_crf1 %in% "Kontroll"]) )
+
+ggtb <- c( 
+  sum(Individinfo$e_antal_total_kontaktat_klinik[Individinfo$studieort_individ %in% "B" &
+                                                   Individinfo$studiegrupp_crf1 %in% "Kontroll"]),
+  sum(Individinfo$aa_ant_som_kan_foljas_upp[Individinfo$studieort_individ %in% "B" &
+                                                   Individinfo$studiegrupp_crf1 %in% "Kontroll"]) )
+
+glund <- c( 
+  sum(Individinfo$e_antal_total_kontaktat_klinik[Individinfo$studieort_individ %in% "C" &
+                                                   Individinfo$studiegrupp_crf1 %in% "Kontroll"]),
+  sum(Individinfo$aa_ant_som_kan_foljas_upp[Individinfo$studieort_individ %in% "C" &
+                                                   Individinfo$studiegrupp_crf1 %in% "Kontroll"]) )
+
+gwoman <- c( 
+  sum(Individinfo$e_antal_total_kontaktat_klinik[Individinfo$sex %in% "woman" &
+                                                   Individinfo$studiegrupp_crf1 %in% "Kontroll"]),
+  sum(Individinfo$aa_ant_som_kan_foljas_upp[Individinfo$sex %in% "woman" &
+                                                   Individinfo$studiegrupp_crf1 %in% "Kontroll"]) )
+
+gman <- c( 
+  sum(Individinfo$e_antal_total_kontaktat_klinik[Individinfo$sex %in% "man" &
+                                                   Individinfo$studiegrupp_crf1 %in% "Kontroll"]),
+  sum(Individinfo$aa_ant_som_kan_foljas_upp[Individinfo$sex %in% "man" &
+                                                   Individinfo$studiegrupp_crf1 %in% "Kontroll"]) )
+
+gyoung <- c( 
+  sum(Individinfo$e_antal_total_kontaktat_klinik[Individinfo$age_cat %in% "younger" &
+                                                   Individinfo$studiegrupp_crf1 %in% "Kontroll"]),
+  sum(Individinfo$aa_ant_som_kan_foljas_upp[Individinfo$age_cat %in% "younger" &
+                                                   Individinfo$studiegrupp_crf1 %in% "Kontroll"]) )
+
+gold <- c( 
+  sum(Individinfo$e_antal_total_kontaktat_klinik[Individinfo$age_cat %in% "older" &
+                                                   Individinfo$studiegrupp_crf1 %in% "Kontroll"]),
+  sum(Individinfo$aa_ant_som_kan_foljas_upp[Individinfo$age_cat %in% "older" &
+                                                   Individinfo$studiegrupp_crf1 %in% "Kontroll"]) )
+
+gbrca <- c( 
+  sum(Individinfo$e_antal_total_kontaktat_klinik[Individinfo$familjediagnos_crf1 %in% "BRCA och PALB2" &
+                                                   Individinfo$studiegrupp_crf1 %in% "Kontroll"]),
+  sum(Individinfo$aa_ant_som_kan_foljas_upp[Individinfo$familjediagnos_crf1 %in% "BRCA och PALB2" &
+                                                   Individinfo$studiegrupp_crf1 %in% "Kontroll"]) )
+
+glynch <- c( 
+  sum(Individinfo$e_antal_total_kontaktat_klinik[Individinfo$familjediagnos_crf1 %in% "Lynch" &
+                                                   Individinfo$studiegrupp_crf1 %in% "Kontroll"]),
+  sum(Individinfo$aa_ant_som_kan_foljas_upp[Individinfo$familjediagnos_crf1 %in% "Lynch" &
+                                                   Individinfo$studiegrupp_crf1 %in% "Kontroll"]) )
+
+gARRmen <- c( 
+  sum(Individinfo$e_antal_man_kontaktat_klinik[Individinfo$studiegrupp_crf1 %in% "Kontroll"]),
+  sum(Individinfo$aa_ant_man_som_kan_foljas_upp[Individinfo$studiegrupp_crf1 %in% "Kontroll"]) )
+
+gARRwomen <- c( 
+  sum(Individinfo$e_antal_kvinnor_kontaktat_klinik[Individinfo$studiegrupp_crf1 %in% "Kontroll"]),
+  sum(Individinfo$aa_ant_kvinnor_som_kan_foljas_upp[Individinfo$studiegrupp_crf1 %in% "Kontroll"]) )
+
+gdegree1 <- c( 
+  sum(Individinfo$ee_ant_fdr_kontaktat[Individinfo$studiegrupp_crf1 %in% "Kontroll"]),
+  sum(Individinfo$aa_ant_fgr_som_kan_foljas_upp[Individinfo$studiegrupp_crf1 %in% "Kontroll"]) )
+
+gdegree2etc <- c( 
+  sum(Individinfo$ee_ant_ovrigt_kontaktat[Individinfo$studiegrupp_crf1 %in% "Kontroll"]),
+  sum(Individinfo$aa_ant_ovriga_som_kan_foljas_upp[Individinfo$studiegrupp_crf1 %in% "Kontroll"]) )
+
+
+ut <- rbind(gcontrol,  gumea, ggtb, glund, 
+            gwoman, gman, gyoung, gold,
+            gbrca, glynch, 
+            gARRmen, gARRwomen, gdegree1, gdegree2etc )
+
+chisqpvalue <- c("","",
+                 "", "", round(chisq.test(rbind(gumea, ggtb, glund))$p.value,digits=2),
+                 "",round(chisq.test(rbind(gwoman, gman))$p.value,digits=2),
+                 "",round(chisq.test(rbind(gyoung, gold))$p.value,digits=2),
+                 "",round(chisq.test(rbind(gbrca, glynch))$p.value,digits=2),
+                 "",round(chisq.test(rbind(gARRmen, gARRwomen))$p.value,digits=4),
+                 "",round(chisq.test(rbind(gdegree1, gdegree2etc))$p.value,digits=2) )
+
+#ut <- cbind(ut, chisqpvalue)
+
+colnames(ut) <- c("Contacted", "Possible to follow up")
+rownames(ut) <- c("Control",  "A", "B", "C", 
+                  "Women", "Men", "Younger", "Older", 
+                  "*PV BRCA1, BRCA2, PALB2*", "*PV MLH1,MSH2, MSH6, PMS2*", 
+                  "ARR men", "ARR women", "First degree", "Other degree")
+
+percentage <- paste(round((ut[,1]/ut[,2])*100,digits=0),"%")
+
+ut <- cbind(ut, percentage)
+
+kable(ut)
+
+rm(gcontrol, gumea, ggtb, glund, 
+            gwoman, gman, gyoung, gold,
+            gbrca, glynch, 
+            gARRmen, gARRwomen, gdegree1, gdegree2etc, chisqpvalue )
+
+c_ut <- ut
+```
+
+\newpage
+
+## crude CI (i.e. based on raw data)
+
+```{r crudetab21aci, echo=FALSE, warning=FALSE, fig.height=2.5}
+
+
+table <- as.data.frame( cbind(as.numeric(s_ut[,1]),as.numeric(s_ut[,2])-as.numeric(s_ut[,1]),
+                              as.numeric(c_ut[,1]),as.numeric(c_ut[,2])-as.numeric(c_ut[,1])) )
+
+# Calculate odds ratio
+or <- c()
+se_log_or <- c()
+for(i in 1:length(table[,1])){
+or[i] <- (table[i,1] / table[i,2]) / (table[i,3] / table[i,4])
+se_log_or[i] <- sqrt(1/table[i,1] + 1/table[i,2] + 1/table[i,3] + 1/table[i,4])
+}
+
+# Calculate CI using the Woolf method
+log_or <- log(or)
+ci_lower <- exp(log_or - 1.96 * se_log_or)
+ci_upper <- exp(log_or + 1.96 * se_log_or)
+
+
+utci <- cbind(round(or, digits=2), round(ci_lower, digits=2), round(ci_upper, digits=2)) 
+rownames(utci) <- rownames(ut)
+colnames(utci) <- c("Odds Ratio", "95% CI l", "95% CI u")
+
+kable(utci)
+
+
+```
+
+\newpage
+
+
+# ARR 
+
+## ARRs who contacted
+mean median etc for intervention and control group
+
+### Total PV material
+
+```{r descriptivearrcont1a, echo=FALSE, warning=FALSE, fig.height=2.5}
+
+intarrk <- summary(Individinfo$e_antal_total_kontaktat_klinik[
+  Individinfo$studiegrupp_crf1 %in% "Intervention"])
+kontarrk <- summary(Individinfo$e_antal_total_kontaktat_klinik[
+  Individinfo$studiegrupp_crf1 %in% "Kontroll"])
+
+
+ut <- rbind(intarrk,kontarrk)
+
+kable(ut)
+
+```
+
+
+
+
+## ARRs possible to follow up
+Number of ARRs per family diagnosis in control and study group, based on 
+"aa_ant_som_kan_foljas_upp".
+
+```{r descriptive1b201, echo=FALSE, warning=FALSE, fig.height=2.5}
+
+BRCAPALB2_i <- c( Individinfo$aa_ant_som_kan_foljas_upp[
+  Individinfo$familjediagnos_crf1 %in% "BRCA och PALB2" & 
+    Individinfo$studiegrupp_crf1 %in% "Intervention"] )
+
+
+Lynch_i <- c( Individinfo$aa_ant_som_kan_foljas_upp[
+  Individinfo$familjediagnos_crf1 %in% "Lynch" & 
+    Individinfo$studiegrupp_crf1 %in% "Intervention"] )
+
+BRCAPALB2_c <- c( Individinfo$aa_ant_som_kan_foljas_upp[
+  Individinfo$familjediagnos_crf1 %in% "BRCA och PALB2" & 
+    Individinfo$studiegrupp_crf1 %in% "Kontroll"] )
+
+Lynch_c <- c( Individinfo$aa_ant_som_kan_foljas_upp[
+  Individinfo$familjediagnos_crf1 %in% "Lynch" & 
+    Individinfo$studiegrupp_crf1 %in% "Kontroll"] )
+ 
+
+
+ut <- rbind( c(sum(BRCAPALB2_i, na.rm =TRUE),  sum(Lynch_i, na.rm =TRUE)), 
+            c(sum(BRCAPALB2_c, na.rm =TRUE),  sum(Lynch_c, na.rm =TRUE)) )
+
+colnames(ut) <- c("*PV BRCA1, BRCA2, PALB2*", "*PV MLH1,MSH2, MSH6, PMS2*")  
+rownames(ut) <- c("intervention", "control")
+
+pp <- ut
+
+kable(ut, caption="ARRs per family diagnosis (possible to follow up)")
+
+
+```
+
+
+
+```{r descriptive2bsum01, echo=FALSE, warning=FALSE, fig.height=2.5}
+
+ut <- rowSums(ut)
+
+kable(ut, col.names = "N (possible to follow up)", caption="Total")
+
+
+```
+
+
+```{r descriptive2ba01, echo=FALSE, warning=FALSE, fig.height=2.5}
+
+uts <- cbind( summary(BRCAPALB2_i),  summary(Lynch_i) ) 
+
+colnames(uts) <- c("*PV BRCA1, BRCA2, PALB2*", "*PV MLH1,MSH2, MSH6, PMS2*") 
+
+kable(uts,caption="Study ARR (possible to follow up)", digits=2)
+
+```
+
+```{r descriptive2bc01, echo=FALSE, warning=FALSE, fig.height=2.5}
+
+utc <- cbind( summary(BRCAPALB2_c), summary(Lynch_c) ) 
+
+colnames(utc) <- c("*PV BRCA1, BRCA2, PALB2*", "*PV MLH1,MSH2, MSH6, PMS2*")  
+
+
+kable(utc,caption="Control ARR (possible to follow up)", digits=2)
+
+```
+
+
+
+\pagebreak
+
+
+
+### ARR by degree of relation
+Number of ARRs per family diagnosis in control and study group, based on 
+"aa_ant_fgr_som_kan_foljas_upp" och "aa_ant_ovriga_som_kan_foljas_upp" respectively.
+
+First degree
+
+```{r descriptive1b1st01, echo=FALSE, warning=FALSE, fig.height=2.5}
+
+BRCAPALB2_i <- sum( Individinfo$aa_ant_fgr_som_kan_foljas_upp[
+  Individinfo$familjediagnos_crf1 %in% "BRCA och PALB2" & 
+    Individinfo$studiegrupp_crf1 %in% "Intervention" ], na.rm =TRUE )
+
+
+Lynch_i <- sum( Individinfo$aa_ant_fgr_som_kan_foljas_upp[
+  Individinfo$familjediagnos_crf1 %in% "Lynch" & 
+    Individinfo$studiegrupp_crf1 %in% "Intervention" ], na.rm =TRUE )
+
+BRCAPALB2_c <- sum( Individinfo$aa_ant_fgr_som_kan_foljas_upp[
+  Individinfo$familjediagnos_crf1 %in% "BRCA och PALB2" ], na.rm =TRUE )
+
+
+Lynch_c <- sum( Individinfo$aa_ant_fgr_som_kan_foljas_upp[
+  Individinfo$familjediagnos_crf1 %in% "Lynch" & 
+    Individinfo$studiegrupp_crf1 %in% "Kontroll" ], na.rm =TRUE )
+ 
+
+
+ut <- rbind(c(BRCAPALB2_i, Lynch_i), 
+            c(BRCAPALB2_c,  Lynch_c))
+
+colnames(ut) <- c("*PV BRCA1, BRCA2, PALB2*", "*PV MLH1,MSH2, MSH6, PMS2*") 
+rownames(ut) <- c("intervention", "control")
+
+first <- ut
+
+kable(ut)
+
+```
+
+
+
+Second degree or more
+
+```{r descriptive1b2nd01, echo=FALSE, warning=FALSE, fig.height=2.5}
+
+BRCAPALB2_i <- sum( Individinfo$aa_ant_ovriga_som_kan_foljas_upp[
+  Individinfo$familjediagnos_crf1 %in% "BRCA och PALB2" & 
+    Individinfo$studiegrupp_crf1 %in% "Intervention" ], na.rm =TRUE )
+
+
+Lynch_i <- sum( Individinfo$aa_ant_ovriga_som_kan_foljas_upp[
+  Individinfo$familjediagnos_crf1 %in% "Lynch" & 
+    Individinfo$studiegrupp_crf1 %in% "Intervention" ], na.rm =TRUE )
+
+BRCAPALB2_c <- sum( Individinfo$aa_ant_ovriga_som_kan_foljas_upp[
+  Individinfo$familjediagnos_crf1 %in% "BRCA och PALB2" ], na.rm =TRUE )
+
+
+Lynch_c <- sum( Individinfo$aa_ant_ovriga_som_kan_foljas_upp[
+  Individinfo$familjediagnos_crf1 %in% "Lynch" & 
+    Individinfo$studiegrupp_crf1 %in% "Kontroll" ], na.rm =TRUE )
+ 
+
+
+ut <- rbind(c(BRCAPALB2_i, Lynch_i), 
+            c(BRCAPALB2_c,  Lynch_c))
+
+colnames(ut) <- c("*PV BRCA1, BRCA2, PALB2*", "*PV MLH1,MSH2, MSH6, PMS2*") 
+rownames(ut) <- c("intervention", "control")
+
+first <- ut
+
+kable(ut)
+
+```
+
+
+
+
+Mean and median number of ARRs based on aa_ant_som_kan_foljas_upp
+
+```{r descriptivefoljas1b1a0, echo=FALSE, warning=FALSE, fig.height=2.5}
+
+
+Individinfo_urval <- Individinfo[substr(Individinfo$directid,5,6) %in% "01",]
+
+int_i <- c(Individinfo_urval$aa_ant_som_kan_foljas_upp[
+    Individinfo_urval$studiegrupp_crf1 %in% "Intervention"] )
+
+cont_c <- c(Individinfo_urval$aa_ant_som_kan_foljas_upp[
+    Individinfo_urval$studiegrupp_crf1 %in% "Kontroll"] )
+ 
+
+
+ut <- rbind( summary(int_i), summary(cont_c) )
+               
+
+
+rownames(ut) <- c("Intervention", "Control")
+
+
+kable(ut, digits = 2)
+
+```
+
+
+
+
+
+\newpage  
+
+
+
+
+
+
+
+# Chisquare test and Fisher's exact test (with CI), proportions 
+
+Number of ARRs based on aa_ant_som_kan_foljas_upp.
+
+## *PV BRCA1, BRCA2, PALB2* och *PV MLH1, MSH2, MSH6, PMS2*
+
+### Total
+
+```{r analysis1app, echo=FALSE, warning=FALSE, fig.height=2.5}
+
+
+
+N_i_berorda <- sum( Individinfo$aa_ant_som_kan_foljas_upp[ 
+    Individinfo$studiegrupp_crf1 %in% "Intervention"], na.rm =TRUE )
+
+N_i_kontakt <- sum( Individinfo$e_antal_total_kontaktat_klinik[ 
+    Individinfo$studiegrupp_crf1 %in% "Intervention"], na.rm =TRUE )
+
+N_c_berorda <- sum( Individinfo$aa_ant_som_kan_foljas_upp[ 
+    Individinfo$studiegrupp_crf1 %in% "Kontroll"], na.rm =TRUE )
+
+N_c_kontakt <- sum( Individinfo$e_antal_total_kontaktat_klinik[ 
+    Individinfo$studiegrupp_crf1 %in% "Kontroll"], na.rm =TRUE )
+
+ut <- rbind(c(N_i_berorda - N_i_kontakt, N_i_kontakt, round(N_i_kontakt/N_i_berorda, digits=2) ),
+            c(N_c_berorda - N_c_kontakt, N_c_kontakt, round(N_c_kontakt/N_c_berorda, digits=2)) )
+
+colnames(ut) <- c("no contact", "contact", "proportion contact")
+rownames(ut) <- c("intervention", "control")
+
+
+kable(ut)
+
+chisq.test(ut[1:2,1:2])
+fisher.test(ut[1:2,1:2])
+
+```
+
+
+
+### Female index 
+
+
+```{r analysis1f, echo=FALSE, warning=FALSE, fig.height=2.5}
+
+
+
+N_i_berorda <- sum( Individinfo$aa_ant_som_kan_foljas_upp[
+    Individinfo$studiegrupp_crf1 %in% "Intervention" & Individinfo$sex %in% "woman"], na.rm =TRUE )
+
+N_i_kontakt <- sum( Individinfo$e_antal_total_kontaktat_klinik[
+    Individinfo$studiegrupp_crf1 %in% "Intervention" & Individinfo$sex %in% "woman"], na.rm =TRUE )
+
+N_c_berorda <- sum( Individinfo$aa_ant_som_kan_foljas_upp[
+    Individinfo$studiegrupp_crf1 %in% "Kontroll" & Individinfo$sex %in% "woman"], na.rm =TRUE )
+
+N_c_kontakt <- sum( Individinfo$e_antal_total_kontaktat_klinik[
+    Individinfo$studiegrupp_crf1 %in% "Kontroll" & Individinfo$sex %in% "woman"], na.rm =TRUE )
+
+ut <- rbind(c(N_i_berorda - N_i_kontakt, N_i_kontakt, round(N_i_kontakt/N_i_berorda, digits=2) ),
+            c(N_c_berorda - N_c_kontakt, N_c_kontakt, round(N_c_kontakt/N_c_berorda, digits=2)) )
+
+colnames(ut) <- c("no contact", "contact", "proportion contact")
+rownames(ut) <- c("intervention", "control")
+
+
+kable(ut)
+
+chisq.test(ut[1:2,1:2])
+fisher.test(ut[1:2,1:2])
+
+
+
+```
+
+
+### Male index 
+
+
+```{r analysis1g, echo=FALSE, warning=FALSE, fig.height=2.5}
+
+
+
+N_i_berorda <- sum( Individinfo$aa_ant_som_kan_foljas_upp[
+    Individinfo$studiegrupp_crf1 %in% "Intervention" & Individinfo$sex %in% "man"], na.rm =TRUE )
+
+N_i_kontakt <- sum( Individinfo$e_antal_total_kontaktat_klinik[
+    Individinfo$studiegrupp_crf1 %in% "Intervention" & Individinfo$sex %in% "man"], na.rm =TRUE )
+
+N_c_berorda <- sum( Individinfo$aa_ant_som_kan_foljas_upp[
+    Individinfo$studiegrupp_crf1 %in% "Kontroll" & Individinfo$sex %in% "man"], na.rm =TRUE )
+
+N_c_kontakt <- sum( Individinfo$e_antal_total_kontaktat_klinik[
+    Individinfo$studiegrupp_crf1 %in% "Kontroll" & Individinfo$sex %in% "man"], na.rm =TRUE )
+
+ut <- rbind(c(N_i_berorda - N_i_kontakt, N_i_kontakt, round(N_i_kontakt/N_i_berorda, digits=2) ),
+            c(N_c_berorda - N_c_kontakt, N_c_kontakt, round(N_c_kontakt/N_c_berorda, digits=2)) )
+
+colnames(ut) <- c("no contact", "contact", "proportion contact")
+rownames(ut) <- c("intervention", "control")
+
+
+kable(ut)
+
+chisq.test(ut[1:2,1:2])
+fisher.test(ut[1:2,1:2])
+
+
+
+```
+
+### Younger index
+
+
+```{r analysis1ga, echo=FALSE, warning=FALSE, fig.height=2.5}
+
+
+
+N_i_berorda <- sum( Individinfo$aa_ant_som_kan_foljas_upp[
+    Individinfo$studiegrupp_crf1 %in% "Intervention" & Individinfo$age_cat %in% "younger"], na.rm =TRUE )
+
+N_i_kontakt <- sum( Individinfo$e_antal_total_kontaktat_klinik[
+    Individinfo$studiegrupp_crf1 %in% "Intervention" & Individinfo$age_cat %in% "younger"], na.rm =TRUE )
+
+N_c_berorda <- sum( Individinfo$aa_ant_som_kan_foljas_upp[
+    Individinfo$studiegrupp_crf1 %in% "Kontroll" & Individinfo$age_cat %in% "younger"], na.rm =TRUE )
+
+N_c_kontakt <- sum( Individinfo$e_antal_total_kontaktat_klinik[
+    Individinfo$studiegrupp_crf1 %in% "Kontroll" & Individinfo$age_cat %in% "younger"], na.rm =TRUE )
+
+ut <- rbind(c(N_i_berorda - N_i_kontakt, N_i_kontakt, round(N_i_kontakt/N_i_berorda, digits=2) ),
+            c(N_c_berorda - N_c_kontakt, N_c_kontakt, round(N_c_kontakt/N_c_berorda, digits=2)) )
+
+colnames(ut) <- c("no contact", "contact", "proportion contact")
+rownames(ut) <- c("intervention", "control")
+
+
+kable(ut)
+
+chisq.test(ut[1:2,1:2])
+fisher.test(ut[1:2,1:2])
+
+
+
+```
+
+
+### Older index
+
+
+```{r analysis1gb, echo=FALSE, warning=FALSE, fig.height=2.5}
+
+
+
+N_i_berorda <- sum( Individinfo$aa_ant_som_kan_foljas_upp[
+    Individinfo$studiegrupp_crf1 %in% "Intervention" & Individinfo$age_cat %in% "older"], na.rm =TRUE )
+
+N_i_kontakt <- sum( Individinfo$e_antal_total_kontaktat_klinik[
+    Individinfo$studiegrupp_crf1 %in% "Intervention" & Individinfo$age_cat %in% "older"], na.rm =TRUE )
+
+N_c_berorda <- sum( Individinfo$aa_ant_som_kan_foljas_upp[
+    Individinfo$studiegrupp_crf1 %in% "Kontroll" & Individinfo$age_cat %in% "older"], na.rm =TRUE )
+
+N_c_kontakt <- sum( Individinfo$e_antal_total_kontaktat_klinik[
+    Individinfo$studiegrupp_crf1 %in% "Kontroll" & Individinfo$age_cat %in% "older"], na.rm =TRUE )
+
+ut <- rbind(c(N_i_berorda - N_i_kontakt, N_i_kontakt, round(N_i_kontakt/N_i_berorda, digits=2) ),
+            c(N_c_berorda - N_c_kontakt, N_c_kontakt, round(N_c_kontakt/N_c_berorda, digits=2)) )
+
+colnames(ut) <- c("no contact", "contact", "proportion contact")
+rownames(ut) <- c("intervention", "control")
+
+
+kable(ut)
+
+chisq.test(ut[1:2,1:2])
+fisher.test(ut[1:2,1:2])
+
+
+
+```
+
+
+### Umeå (A)
+
+
+```{r analysis1gc, echo=FALSE, warning=FALSE, fig.height=2.5}
+
+
+
+N_i_berorda <- sum( Individinfo$aa_ant_som_kan_foljas_upp[
+    Individinfo$studiegrupp_crf1 %in% "Intervention" & Individinfo$studieort_individ %in% "A"], na.rm =TRUE )
+
+N_i_kontakt <- sum( Individinfo$e_antal_total_kontaktat_klinik[
+    Individinfo$studiegrupp_crf1 %in% "Intervention" & Individinfo$studieort_individ %in% "A"], na.rm =TRUE )
+
+N_c_berorda <- sum( Individinfo$aa_ant_som_kan_foljas_upp[
+    Individinfo$studiegrupp_crf1 %in% "Kontroll" & Individinfo$studieort_individ %in% "A"], na.rm =TRUE )
+
+N_c_kontakt <- sum( Individinfo$e_antal_total_kontaktat_klinik[
+    Individinfo$studiegrupp_crf1 %in% "Kontroll" & Individinfo$studieort_individ %in% "A"], na.rm =TRUE )
+
+ut <- rbind(c(N_i_berorda - N_i_kontakt, N_i_kontakt, round(N_i_kontakt/N_i_berorda, digits=2) ),
+            c(N_c_berorda - N_c_kontakt, N_c_kontakt, round(N_c_kontakt/N_c_berorda, digits=2)) )
+
+colnames(ut) <- c("no contact", "contact", "proportion contact")
+rownames(ut) <- c("intervention", "control")
+
+
+kable(ut)
+
+chisq.test(ut[1:2,1:2])
+fisher.test(ut[1:2,1:2])
+
+
+
+```
+
+
+### Göteborg (B)
+
+
+```{r analysis1gd, echo=FALSE, warning=FALSE, fig.height=2.5}
+
+
+
+N_i_berorda <- sum( Individinfo$aa_ant_som_kan_foljas_upp[
+    Individinfo$studiegrupp_crf1 %in% "Intervention" & Individinfo$studieort_individ %in% "B"], na.rm =TRUE )
+
+N_i_kontakt <- sum( Individinfo$e_antal_total_kontaktat_klinik[
+    Individinfo$studiegrupp_crf1 %in% "Intervention" & Individinfo$studieort_individ %in% "B"], na.rm =TRUE )
+
+N_c_berorda <- sum( Individinfo$aa_ant_som_kan_foljas_upp[
+    Individinfo$studiegrupp_crf1 %in% "Kontroll" & Individinfo$studieort_individ %in% "B"], na.rm =TRUE )
+
+N_c_kontakt <- sum( Individinfo$e_antal_total_kontaktat_klinik[
+    Individinfo$studiegrupp_crf1 %in% "Kontroll" & Individinfo$studieort_individ %in% "B"], na.rm =TRUE )
+
+ut <- rbind(c(N_i_berorda - N_i_kontakt, N_i_kontakt, round(N_i_kontakt/N_i_berorda, digits=2) ),
+            c(N_c_berorda - N_c_kontakt, N_c_kontakt, round(N_c_kontakt/N_c_berorda, digits=2)) )
+
+colnames(ut) <- c("no contact", "contact", "proportion contact")
+rownames(ut) <- c("intervention", "control")
+
+
+kable(ut)
+
+chisq.test(ut[1:2,1:2])
+fisher.test(ut[1:2,1:2])
+
+
+
+```
+
+### Lund (C)
+
+
+```{r analysis1ge, echo=FALSE, warning=FALSE, fig.height=2.5}
+
+
+
+N_i_berorda <- sum( Individinfo$aa_ant_som_kan_foljas_upp[
+    Individinfo$studiegrupp_crf1 %in% "Intervention" & Individinfo$studieort_individ %in% "C"], na.rm =TRUE )
+
+N_i_kontakt <- sum( Individinfo$e_antal_total_kontaktat_klinik[
+    Individinfo$studiegrupp_crf1 %in% "Intervention" & Individinfo$studieort_individ %in% "C"], na.rm =TRUE )
+
+N_c_berorda <- sum( Individinfo$aa_ant_som_kan_foljas_upp[
+    Individinfo$studiegrupp_crf1 %in% "Kontroll" & Individinfo$studieort_individ %in% "C"], na.rm =TRUE )
+
+N_c_kontakt <- sum( Individinfo$e_antal_total_kontaktat_klinik[
+    Individinfo$studiegrupp_crf1 %in% "Kontroll" & Individinfo$studieort_individ %in% "C"], na.rm =TRUE )
+
+ut <- rbind(c(N_i_berorda - N_i_kontakt, N_i_kontakt, round(N_i_kontakt/N_i_berorda, digits=2) ),
+            c(N_c_berorda - N_c_kontakt, N_c_kontakt, round(N_c_kontakt/N_c_berorda, digits=2)) )
+
+colnames(ut) <- c("no contact", "contact", "proportion contact")
+rownames(ut) <- c("intervention", "control")
+
+
+kable(ut)
+
+chisq.test(ut[1:2,1:2])
+fisher.test(ut[1:2,1:2])
+
+
+
+```
+
+### 1st degree ARRs
+
+```{r analysis1ha, echo=FALSE, warning=FALSE, fig.height=2.5}
+
+
+
+N_i_berorda <- sum( Individinfo$aa_ant_fgr_som_kan_foljas_upp[ 
+    Individinfo$studiegrupp_crf1 %in% "Intervention"], na.rm =TRUE )
+
+N_i_kontakt <- sum( Individinfo$ee_ant_fdr_kontaktat[ 
+    Individinfo$studiegrupp_crf1 %in% "Intervention"], na.rm =TRUE )
+
+N_c_berorda <- sum( Individinfo$aa_ant_fgr_som_kan_foljas_upp
+                    [ 
+    Individinfo$studiegrupp_crf1 %in% "Kontroll"], na.rm =TRUE )
+
+N_c_kontakt <- sum( Individinfo$ee_ant_fdr_kontaktat[ 
+    Individinfo$studiegrupp_crf1 %in% "Kontroll"], na.rm =TRUE )
+
+ut <- rbind(c(N_i_berorda - N_i_kontakt, N_i_kontakt, round(N_i_kontakt/N_i_berorda, digits=2) ),
+            c(N_c_berorda - N_c_kontakt, N_c_kontakt, round(N_c_kontakt/N_c_berorda, digits=2)) )
+
+colnames(ut) <- c("no contact", "contact", "proportion contact")
+rownames(ut) <- c("intervention", "control")
+
+
+kable(ut)
+
+chisq.test(ut[1:2,1:2])
+fisher.test(ut[1:2,1:2])
+
+```
+
+
+
+### >=2nd degree ARRs
+
+```{r analysis1ba, echo=FALSE, warning=FALSE, fig.height=2.5}
+
+
+
+N_i_berorda <- sum( Individinfo$aa_ant_ovriga_som_kan_foljas_upp[ 
+    Individinfo$studiegrupp_crf1 %in% "Intervention"], na.rm =TRUE )
+
+N_i_kontakt <- sum( Individinfo$ee_ant_ovrigt_kontaktat[ 
+    Individinfo$studiegrupp_crf1 %in% "Intervention"], na.rm =TRUE )
+
+N_c_berorda <- sum( Individinfo$aa_ant_ovriga_som_kan_foljas_upp[ 
+    Individinfo$studiegrupp_crf1 %in% "Kontroll"], na.rm =TRUE )
+
+N_c_kontakt <- sum( Individinfo$ee_ant_ovrigt_kontaktat[ 
+    Individinfo$studiegrupp_crf1 %in% "Kontroll"], na.rm =TRUE )
+
+ut <- rbind(c(N_i_berorda - N_i_kontakt, N_i_kontakt, round(N_i_kontakt/N_i_berorda, digits=2) ),
+            c(N_c_berorda - N_c_kontakt, N_c_kontakt, round(N_c_kontakt/N_c_berorda, digits=2)) )
+
+colnames(ut) <- c("no contact", "contact", "proportion contact")
+rownames(ut) <- c("intervention", "control")
+
+
+kable(ut)
+
+chisq.test(ut[1:2,1:2])
+fisher.test(ut[1:2,1:2])
+
+```
+
+
+
+### Female ARRs
+
+```{r analysis1h, echo=FALSE, warning=FALSE, fig.height=2.5}
+
+
+
+N_i_berorda <- sum( Individinfo$aa_ant_kvinnor_som_kan_foljas_upp[ 
+    Individinfo$studiegrupp_crf1 %in% "Intervention"], na.rm =TRUE )
+
+N_i_kontakt <- sum( Individinfo$e_antal_kvinnor_kontaktat_klinik[ 
+    Individinfo$studiegrupp_crf1 %in% "Intervention"], na.rm =TRUE )
+
+N_c_berorda <- sum( Individinfo$aa_ant_kvinnor_som_kan_foljas_upp[ 
+    Individinfo$studiegrupp_crf1 %in% "Kontroll"], na.rm =TRUE )
+
+N_c_kontakt <- sum( Individinfo$e_antal_kvinnor_kontaktat_klinik[ 
+    Individinfo$studiegrupp_crf1 %in% "Kontroll"], na.rm =TRUE )
+
+ut <- rbind(c(N_i_berorda - N_i_kontakt, N_i_kontakt, round(N_i_kontakt/N_i_berorda, digits=2) ),
+            c(N_c_berorda - N_c_kontakt, N_c_kontakt, round(N_c_kontakt/N_c_berorda, digits=2)) )
+
+colnames(ut) <- c("no contact", "contact", "proportion contact")
+rownames(ut) <- c("intervention", "control")
+
+
+kable(ut)
+
+chisq.test(ut[1:2,1:2])
+fisher.test(ut[1:2,1:2])
+
+```
+
+
+
+### Male ARRs
+
+```{r analysis1i, echo=FALSE, warning=FALSE, fig.height=2.5}
+
+
+
+N_i_berorda <- sum( Individinfo$aa_ant_man_som_kan_foljas_upp[ 
+    Individinfo$studiegrupp_crf1 %in% "Intervention"], na.rm =TRUE )
+
+N_i_kontakt <- sum( Individinfo$e_antal_man_kontaktat_klinik[ 
+    Individinfo$studiegrupp_crf1 %in% "Intervention"], na.rm =TRUE )
+
+N_c_berorda <- sum( Individinfo$aa_ant_man_som_kan_foljas_upp[ 
+    Individinfo$studiegrupp_crf1 %in% "Kontroll"], na.rm =TRUE )
+
+N_c_kontakt <- sum( Individinfo$e_antal_man_kontaktat_klinik[ 
+    Individinfo$studiegrupp_crf1 %in% "Kontroll"], na.rm =TRUE )
+
+ut <- rbind(c(N_i_berorda - N_i_kontakt, N_i_kontakt, round(N_i_kontakt/N_i_berorda, digits=2) ),
+            c(N_c_berorda - N_c_kontakt, N_c_kontakt, round(N_c_kontakt/N_c_berorda, digits=2)) )
+
+colnames(ut) <- c("no contact", "contact", "proportion contact")
+rownames(ut) <- c("intervention", "control")
+
+
+kable(ut)
+
+chisq.test(ut[1:2,1:2])
+fisher.test(ut[1:2,1:2])
+
+```
+
+## *PV BRCA1, BRCA2, PALB2* 
+
+### Total *PV BRCA1, BRCA2, PALB2* 
+
+```{r analysis1appbrca, echo=FALSE, warning=FALSE, fig.height=2.5}
+
+Individinfo_urval <- Individinfo[Individinfo$familjediagnos_crf1 %in% "BRCA och PALB2",]
+
+N_i_berorda <- sum( Individinfo_urval$aa_ant_som_kan_foljas_upp[ 
+    Individinfo_urval$studiegrupp_crf1 %in% "Intervention"], na.rm =TRUE )
+
+N_i_kontakt <- sum( Individinfo_urval$e_antal_total_kontaktat_klinik[ 
+    Individinfo_urval$studiegrupp_crf1 %in% "Intervention"], na.rm =TRUE )
+
+N_c_berorda <- sum( Individinfo_urval$aa_ant_som_kan_foljas_upp[ 
+    Individinfo_urval$studiegrupp_crf1 %in% "Kontroll"], na.rm =TRUE )
+
+N_c_kontakt <- sum( Individinfo_urval$e_antal_total_kontaktat_klinik[ 
+    Individinfo_urval$studiegrupp_crf1 %in% "Kontroll"], na.rm =TRUE )
+
+ut <- rbind(c(N_i_berorda - N_i_kontakt, N_i_kontakt, round(N_i_kontakt/N_i_berorda, digits=2) ),
+            c(N_c_berorda - N_c_kontakt, N_c_kontakt, round(N_c_kontakt/N_c_berorda, digits=2)) )
+
+colnames(ut) <- c("no contact", "contact", "proportion contact")
+rownames(ut) <- c("intervention", "control")
+
+
+kable(ut)
+
+chisq.test(ut[1:2,1:2])
+fisher.test(ut[1:2,1:2])
+
+```
+
+
+
+### Female index *PV BRCA1, BRCA2, PALB2* 
+
+
+```{r analysis1fbrca, echo=FALSE, warning=FALSE, fig.height=2.5}
+
+
+
+N_i_berorda <- sum( Individinfo_urval$aa_ant_som_kan_foljas_upp[
+    Individinfo_urval$studiegrupp_crf1 %in% "Intervention" & Individinfo_urval$sex %in% "woman"], na.rm =TRUE )
+
+N_i_kontakt <- sum( Individinfo_urval$e_antal_total_kontaktat_klinik[
+    Individinfo_urval$studiegrupp_crf1 %in% "Intervention" & Individinfo_urval$sex %in% "woman"], na.rm =TRUE )
+
+N_c_berorda <- sum( Individinfo_urval$aa_ant_som_kan_foljas_upp[
+    Individinfo_urval$studiegrupp_crf1 %in% "Kontroll" & Individinfo_urval$sex %in% "woman"], na.rm =TRUE )
+
+N_c_kontakt <- sum( Individinfo_urval$e_antal_total_kontaktat_klinik[
+    Individinfo_urval$studiegrupp_crf1 %in% "Kontroll" & Individinfo_urval$sex %in% "woman"], na.rm =TRUE )
+
+ut <- rbind(c(N_i_berorda - N_i_kontakt, N_i_kontakt, round(N_i_kontakt/N_i_berorda, digits=2) ),
+            c(N_c_berorda - N_c_kontakt, N_c_kontakt, round(N_c_kontakt/N_c_berorda, digits=2)) )
+
+colnames(ut) <- c("no contact", "contact", "proportion contact")
+rownames(ut) <- c("intervention", "control")
+
+
+kable(ut)
+
+chisq.test(ut[1:2,1:2])
+fisher.test(ut[1:2,1:2])
+
+
+
+```
+
+
+### Male index *PV BRCA1, BRCA2, PALB2* 
+
+
+```{r analysis1gbrca, echo=FALSE, warning=FALSE, fig.height=2.5}
+
+
+
+N_i_berorda <- sum( Individinfo_urval$aa_ant_som_kan_foljas_upp[
+    Individinfo_urval$studiegrupp_crf1 %in% "Intervention" & Individinfo_urval$sex %in% "man"], na.rm =TRUE )
+
+N_i_kontakt <- sum( Individinfo_urval$e_antal_total_kontaktat_klinik[
+    Individinfo_urval$studiegrupp_crf1 %in% "Intervention" & Individinfo_urval$sex %in% "man"], na.rm =TRUE )
+
+N_c_berorda <- sum( Individinfo_urval$aa_ant_som_kan_foljas_upp[
+    Individinfo_urval$studiegrupp_crf1 %in% "Kontroll" & Individinfo_urval$sex %in% "man"], na.rm =TRUE )
+
+N_c_kontakt <- sum( Individinfo_urval$e_antal_total_kontaktat_klinik[
+    Individinfo_urval$studiegrupp_crf1 %in% "Kontroll" & Individinfo_urval$sex %in% "man"], na.rm =TRUE )
+
+ut <- rbind(c(N_i_berorda - N_i_kontakt, N_i_kontakt, round(N_i_kontakt/N_i_berorda, digits=2) ),
+            c(N_c_berorda - N_c_kontakt, N_c_kontakt, round(N_c_kontakt/N_c_berorda, digits=2)) )
+
+colnames(ut) <- c("no contact", "contact", "proportion contact")
+rownames(ut) <- c("intervention", "control")
+
+
+kable(ut)
+
+chisq.test(ut[1:2,1:2])
+fisher.test(ut[1:2,1:2])
+
+
+
+```
+
+
+### Female ARRs *PV BRCA1, BRCA2, PALB2* 
+
+```{r analysis1hbrca, echo=FALSE, warning=FALSE, fig.height=2.5}
+
+
+
+N_i_berorda <- sum( Individinfo_urval$aa_ant_kvinnor_som_kan_foljas_upp[ 
+    Individinfo_urval$studiegrupp_crf1 %in% "Intervention"], na.rm =TRUE )
+
+N_i_kontakt <- sum( Individinfo_urval$e_antal_kvinnor_kontaktat_klinik[ 
+    Individinfo_urval$studiegrupp_crf1 %in% "Intervention"], na.rm =TRUE )
+
+N_c_berorda <- sum( Individinfo_urval$aa_ant_kvinnor_som_kan_foljas_upp[ 
+    Individinfo_urval$studiegrupp_crf1 %in% "Kontroll"], na.rm =TRUE )
+
+N_c_kontakt <- sum( Individinfo_urval$e_antal_kvinnor_kontaktat_klinik[ 
+    Individinfo_urval$studiegrupp_crf1 %in% "Kontroll"], na.rm =TRUE )
+
+ut <- rbind(c(N_i_berorda - N_i_kontakt, N_i_kontakt, round(N_i_kontakt/N_i_berorda, digits=2) ),
+            c(N_c_berorda - N_c_kontakt, N_c_kontakt, round(N_c_kontakt/N_c_berorda, digits=2)) )
+
+colnames(ut) <- c("no contact", "contact", "proportion contact")
+rownames(ut) <- c("intervention", "control")
+
+
+kable(ut)
+
+chisq.test(ut[1:2,1:2])
+fisher.test(ut[1:2,1:2])
+
+```
+
+
+
+### Male ARRs *PV BRCA1, BRCA2, PALB2* 
+
+```{r analysis1ibrca, echo=FALSE, warning=FALSE, fig.height=2.5}
+
+
+
+N_i_berorda <- sum( Individinfo_urval$aa_ant_man_som_kan_foljas_upp[ 
+    Individinfo_urval$studiegrupp_crf1 %in% "Intervention"], na.rm =TRUE )
+
+N_i_kontakt <- sum( Individinfo_urval$e_antal_man_kontaktat_klinik[ 
+    Individinfo_urval$studiegrupp_crf1 %in% "Intervention"], na.rm =TRUE )
+
+N_c_berorda <- sum( Individinfo_urval$aa_ant_man_som_kan_foljas_upp[ 
+    Individinfo_urval$studiegrupp_crf1 %in% "Kontroll"], na.rm =TRUE )
+
+N_c_kontakt <- sum( Individinfo_urval$e_antal_man_kontaktat_klinik[ 
+    Individinfo_urval$studiegrupp_crf1 %in% "Kontroll"], na.rm =TRUE )
+
+ut <- rbind(c(N_i_berorda - N_i_kontakt, N_i_kontakt, round(N_i_kontakt/N_i_berorda, digits=2) ),
+            c(N_c_berorda - N_c_kontakt, N_c_kontakt, round(N_c_kontakt/N_c_berorda, digits=2)) )
+
+colnames(ut) <- c("no contact", "contact", "proportion contact")
+rownames(ut) <- c("intervention", "control")
+
+
+kable(ut)
+
+chisq.test(ut[1:2,1:2])
+fisher.test(ut[1:2,1:2])
+
+```
+
+
+
+## *PV MLH1, MSH2, MSH6, PMS2*
+
+### Total *PV MLH1, MSH2, MSH6, PMS2*
+
+```{r analysis1applynch, echo=FALSE, warning=FALSE, fig.height=2.5}
+
+Individinfo_urval <- Individinfo[Individinfo$familjediagnos_crf1 %in% "Lynch",]
+
+N_i_berorda <- sum( Individinfo_urval$aa_ant_som_kan_foljas_upp[ 
+    Individinfo_urval$studiegrupp_crf1 %in% "Intervention"], na.rm =TRUE )
+
+N_i_kontakt <- sum( Individinfo_urval$e_antal_total_kontaktat_klinik[ 
+    Individinfo_urval$studiegrupp_crf1 %in% "Intervention"], na.rm =TRUE )
+
+N_c_berorda <- sum( Individinfo_urval$aa_ant_som_kan_foljas_upp[ 
+    Individinfo_urval$studiegrupp_crf1 %in% "Kontroll"], na.rm =TRUE )
+
+N_c_kontakt <- sum( Individinfo_urval$e_antal_total_kontaktat_klinik[ 
+    Individinfo_urval$studiegrupp_crf1 %in% "Kontroll"], na.rm =TRUE )
+
+ut <- rbind(c(N_i_berorda - N_i_kontakt, N_i_kontakt, round(N_i_kontakt/N_i_berorda, digits=2) ),
+            c(N_c_berorda - N_c_kontakt, N_c_kontakt, round(N_c_kontakt/N_c_berorda, digits=2)) )
+
+colnames(ut) <- c("no contact", "contact", "proportion contact")
+rownames(ut) <- c("intervention", "control")
+
+
+kable(ut)
+
+chisq.test(ut[1:2,1:2])
+fisher.test(ut[1:2,1:2])
+
+```
+
+
+
+### Female index *PV MLH1, MSH2, MSH6, PMS2*
+
+
+```{r analysis1flynch, echo=FALSE, warning=FALSE, fig.height=2.5}
+
+
+
+N_i_berorda <- sum( Individinfo_urval$aa_ant_som_kan_foljas_upp[
+    Individinfo_urval$studiegrupp_crf1 %in% "Intervention" & Individinfo_urval$sex %in% "woman"], na.rm =TRUE )
+
+N_i_kontakt <- sum( Individinfo_urval$e_antal_total_kontaktat_klinik[
+    Individinfo_urval$studiegrupp_crf1 %in% "Intervention" & Individinfo_urval$sex %in% "woman"], na.rm =TRUE )
+
+N_c_berorda <- sum( Individinfo_urval$aa_ant_som_kan_foljas_upp[
+    Individinfo_urval$studiegrupp_crf1 %in% "Kontroll" & Individinfo_urval$sex %in% "woman"], na.rm =TRUE )
+
+N_c_kontakt <- sum( Individinfo_urval$e_antal_total_kontaktat_klinik[
+    Individinfo_urval$studiegrupp_crf1 %in% "Kontroll" & Individinfo_urval$sex %in% "woman"], na.rm =TRUE )
+
+ut <- rbind(c(N_i_berorda - N_i_kontakt, N_i_kontakt, round(N_i_kontakt/N_i_berorda, digits=2) ),
+            c(N_c_berorda - N_c_kontakt, N_c_kontakt, round(N_c_kontakt/N_c_berorda, digits=2)) )
+
+colnames(ut) <- c("no contact", "contact", "proportion contact")
+rownames(ut) <- c("intervention", "control")
+
+
+kable(ut)
+
+chisq.test(ut[1:2,1:2])
+fisher.test(ut[1:2,1:2])
+
+
+
+```
+
+
+### Male index *PV MLH1, MSH2, MSH6, PMS2*
+
+
+```{r analysis1glynch, echo=FALSE, warning=FALSE, fig.height=2.5}
+
+
+
+N_i_berorda <- sum( Individinfo_urval$aa_ant_som_kan_foljas_upp[
+    Individinfo_urval$studiegrupp_crf1 %in% "Intervention" & Individinfo_urval$sex %in% "man"], na.rm =TRUE )
+
+N_i_kontakt <- sum( Individinfo_urval$e_antal_total_kontaktat_klinik[
+    Individinfo_urval$studiegrupp_crf1 %in% "Intervention" & Individinfo_urval$sex %in% "man"], na.rm =TRUE )
+
+N_c_berorda <- sum( Individinfo_urval$aa_ant_som_kan_foljas_upp[
+    Individinfo_urval$studiegrupp_crf1 %in% "Kontroll" & Individinfo_urval$sex %in% "man"], na.rm =TRUE )
+
+N_c_kontakt <- sum( Individinfo_urval$e_antal_total_kontaktat_klinik[
+    Individinfo_urval$studiegrupp_crf1 %in% "Kontroll" & Individinfo_urval$sex %in% "man"], na.rm =TRUE )
+
+ut <- rbind(c(N_i_berorda - N_i_kontakt, N_i_kontakt, round(N_i_kontakt/N_i_berorda, digits=2) ),
+            c(N_c_berorda - N_c_kontakt, N_c_kontakt, round(N_c_kontakt/N_c_berorda, digits=2)) )
+
+colnames(ut) <- c("no contact", "contact", "proportion contact")
+rownames(ut) <- c("intervention", "control")
+
+
+kable(ut)
+
+chisq.test(ut[1:2,1:2])
+fisher.test(ut[1:2,1:2])
+
+
+
+```
+
+
+### Female ARRs *PV MLH1, MSH2, MSH6, PMS2*
+
+```{r analysis1hlynch, echo=FALSE, warning=FALSE, fig.height=2.5}
+
+
+
+N_i_berorda <- sum( Individinfo_urval$aa_ant_kvinnor_som_kan_foljas_upp[ 
+    Individinfo_urval$studiegrupp_crf1 %in% "Intervention"], na.rm =TRUE )
+
+N_i_kontakt <- sum( Individinfo_urval$e_antal_kvinnor_kontaktat_klinik[ 
+    Individinfo_urval$studiegrupp_crf1 %in% "Intervention"], na.rm =TRUE )
+
+N_c_berorda <- sum( Individinfo_urval$aa_ant_kvinnor_som_kan_foljas_upp[ 
+    Individinfo_urval$studiegrupp_crf1 %in% "Kontroll"], na.rm =TRUE )
+
+N_c_kontakt <- sum( Individinfo_urval$e_antal_kvinnor_kontaktat_klinik[ 
+    Individinfo_urval$studiegrupp_crf1 %in% "Kontroll"], na.rm =TRUE )
+
+ut <- rbind(c(N_i_berorda - N_i_kontakt, N_i_kontakt, round(N_i_kontakt/N_i_berorda, digits=2) ),
+            c(N_c_berorda - N_c_kontakt, N_c_kontakt, round(N_c_kontakt/N_c_berorda, digits=2)) )
+
+colnames(ut) <- c("no contact", "contact", "proportion contact")
+rownames(ut) <- c("intervention", "control")
+
+
+kable(ut)
+
+chisq.test(ut[1:2,1:2])
+fisher.test(ut[1:2,1:2])
+
+```
+
+
+
+### Male ARRs *PV MLH1, MSH2, MSH6, PMS2*
+
+```{r analysis1ilynch, echo=FALSE, warning=FALSE, fig.height=2.5}
+
+
+
+N_i_berorda <- sum( Individinfo_urval$aa_ant_man_som_kan_foljas_upp[ 
+    Individinfo_urval$studiegrupp_crf1 %in% "Intervention"], na.rm =TRUE )
+
+N_i_kontakt <- sum( Individinfo_urval$e_antal_man_kontaktat_klinik[ 
+    Individinfo_urval$studiegrupp_crf1 %in% "Intervention"], na.rm =TRUE )
+
+N_c_berorda <- sum( Individinfo_urval$aa_ant_man_som_kan_foljas_upp[ 
+    Individinfo_urval$studiegrupp_crf1 %in% "Kontroll"], na.rm =TRUE )
+
+N_c_kontakt <- sum( Individinfo_urval$e_antal_man_kontaktat_klinik[ 
+    Individinfo_urval$studiegrupp_crf1 %in% "Kontroll"], na.rm =TRUE )
+
+ut <- rbind(c(N_i_berorda - N_i_kontakt, N_i_kontakt, round(N_i_kontakt/N_i_berorda, digits=2) ),
+            c(N_c_berorda - N_c_kontakt, N_c_kontakt, round(N_c_kontakt/N_c_berorda, digits=2)) )
+
+colnames(ut) <- c("no contact", "contact", "proportion contact")
+rownames(ut) <- c("intervention", "control")
+
+
+kable(ut)
+
+chisq.test(ut[1:2,1:2])
+fisher.test(ut[1:2,1:2])
+
+```
+
+
+
+\newpage
+
+
+
+
+# Chain of contact 
+
+
+## Total
+
+```{r possibility1a, echo=FALSE, warning=FALSE, fig.height=3}
+
+
+#save full dataset
+temp_df <-Individinfo
+
+#select subset with only Intervention group
+Individinfo <- Individinfo[Individinfo$studiegrupp_crf1 %in% "Intervention",]
+
+
+
+
+###############################################################################
+#correction for relative who contacted the clinic without a letter but a 
+#letter was later sent so that they are not included in "contacted before letter"
+#but in "contacted without a letter"
+
+Individinfo$b_antal_hort_av_sig_innan_brev[
+  Individinfo$directid %in% 415301] <- 
+  Individinfo$b_antal_hort_av_sig_innan_brev[Individinfo$directid %in% 415301] - 1
+Individinfo$b_antal_man_av_sig_innan_brev[
+  Individinfo$directid %in% 415301] <- 
+  Individinfo$b_antal_man_av_sig_innan_brev[Individinfo$directid %in% 415301] - 1
+Individinfo$b_antal_fgr_av_sig_innan_brev[
+  Individinfo$directid %in% 415301] <- 
+  Individinfo$b_antal_fgr_av_sig_innan_brev[Individinfo$directid %in% 415301] - 1
+
+Individinfo$b_antal_hort_av_sig_innan_brev[
+  Individinfo$directid %in% 517201] <- 
+  Individinfo$b_antal_hort_av_sig_innan_brev[Individinfo$directid %in% 517201] - 1
+Individinfo$b_antal_kvinnor_av_sig_innan_brev[
+  Individinfo$directid %in% 517201] <- 
+  Individinfo$b_antal_kvinnor_av_sig_innan_brev[Individinfo$directid %in% 517201] - 1
+Individinfo$b_antal_ovriga_av_sig_innan_brev[
+  Individinfo$directid %in% 517201] <- 
+  Individinfo$b_antal_ovriga_av_sig_innan_brev[Individinfo$directid %in% 517201] - 1
+
+Individinfo$b_antal_hort_av_sig_innan_brev[
+  Individinfo$directid %in% 414301] <- 
+  Individinfo$b_antal_hort_av_sig_innan_brev[Individinfo$directid %in% 414301] - 3
+Individinfo$b_antal_kvinnor_av_sig_innan_brev[
+  Individinfo$directid %in% 414301] <- 
+  Individinfo$b_antal_kvinnor_av_sig_innan_brev[Individinfo$directid %in% 414301] - 1
+Individinfo$b_antal_man_av_sig_innan_brev[
+  Individinfo$directid %in% 414301] <- 
+  Individinfo$b_antal_man_av_sig_innan_brev[Individinfo$directid %in% 414301] - 2
+Individinfo$b_antal_fgr_av_sig_innan_brev[
+  Individinfo$directid %in% 414301] <- 
+  Individinfo$b_antal_fgr_av_sig_innan_brev[Individinfo$directid %in% 414301] - 3
+###############################################################################
+
+
+
+
+
+
+antal <- sum(Individinfo$a_antal_totalt_berord_slaktingar, na.rm = TRUE)
+possfol <- sum(Individinfo$aa_ant_som_kan_foljas_upp, na.rm = TRUE)
+approv <- sum(Individinfo$bb_antal_godkanda_directbrev_tilluppfoljbara, na.rm = TRUE)
+without <-  sum(Individinfo$bb_antal_hort_av_sig_utan_brev, na.rm = TRUE)
+before <- sum(Individinfo$b_antal_hort_av_sig_innan_brev, na.rm = TRUE)
+noadress <-  sum(Individinfo$b_antal_saknar_adress, na.rm = TRUE)
+sent <-  sum(Individinfo$c_antal_brev_faktiskt_skickade, na.rm = TRUE)
+collect <-  sum(Individinfo$d_antal_brev_hamtade_fr_postombud, na.rm = TRUE)
+contprelet <- sum(Individinfo$dd_antal_totalt_brevmottagare_kontaktat_efterbrev, na.rm = TRUE)
+cont <- sum(Individinfo$e_antal_total_kontaktat_klinik, na.rm = TRUE)
+
+N <- c(antal, possfol, approv, before, sent, collect, contprelet, cont)
+
+ut <- data.frame(N)
+
+rownames(ut) <- c("Total ARRs","Possible to follow up", "Approved letters","Preletter contact",
+                  "Letter sent", "Letter collected", "Contacted after letter", "Contacted total")
+colnames(ut) <- c("N")
+
+kable(ut)
+
+
+```
+
+
+## Umeå
+
+```{r possibility2a, echo=FALSE, warning=FALSE, fig.height=3}
+
+Individinfo_urval <- Individinfo[Individinfo$studieort_individ %in% c("A"),]
+
+antal <- sum(Individinfo_urval$a_antal_totalt_berord_slaktingar, na.rm = TRUE)
+possfol <- sum(Individinfo_urval$aa_ant_som_kan_foljas_upp, na.rm = TRUE)
+approv <- sum(Individinfo_urval$bb_antal_godkanda_directbrev_tilluppfoljbara, na.rm = TRUE)
+before <- sum(Individinfo_urval$b_antal_hort_av_sig_innan_brev, na.rm = TRUE)
+noadress <-  sum(Individinfo_urval$b_antal_saknar_adress, na.rm = TRUE)
+sent <-  sum(Individinfo_urval$c_antal_brev_faktiskt_skickade, na.rm = TRUE)
+collect <-  sum(Individinfo_urval$d_antal_brev_hamtade_fr_postombud, na.rm = TRUE)
+contprelet <- sum(Individinfo_urval$dd_antal_totalt_brevmottagare_kontaktat_efterbrev, na.rm = TRUE)
+cont <- sum(Individinfo_urval$e_antal_total_kontaktat_klinik, na.rm = TRUE)
+
+N <- c(antal, possfol, approv, before, sent, collect, contprelet, cont)
+
+ut <- data.frame(N)
+
+rownames(ut) <- c("Total ARRs","Possible to follow up", "Approved letters","Preletter contact",
+                  "Letter sent", "Letter collected", "Contacted after letter", "Contacted total")
+colnames(ut) <- c("N")
+
+kable(ut)
+
+
+```
+
+
+## Göteborg
+
+```{r possibility2b, echo=FALSE, warning=FALSE, fig.height=3}
+
+Individinfo_urval <- Individinfo[Individinfo$studieort_individ %in% c("B"),]
+
+antal <- sum(Individinfo_urval$a_antal_totalt_berord_slaktingar, na.rm = TRUE)
+possfol <- sum(Individinfo_urval$aa_ant_som_kan_foljas_upp, na.rm = TRUE)
+approv <- sum(Individinfo_urval$bb_antal_godkanda_directbrev_tilluppfoljbara, na.rm = TRUE)
+before <- sum(Individinfo_urval$b_antal_hort_av_sig_innan_brev, na.rm = TRUE)
+noadress <-  sum(Individinfo_urval$b_antal_saknar_adress, na.rm = TRUE)
+sent <-  sum(Individinfo_urval$c_antal_brev_faktiskt_skickade, na.rm = TRUE)
+collect <-  sum(Individinfo_urval$d_antal_brev_hamtade_fr_postombud, na.rm = TRUE)
+contprelet <- sum(Individinfo_urval$dd_antal_totalt_brevmottagare_kontaktat_efterbrev, na.rm = TRUE)
+cont <- sum(Individinfo_urval$e_antal_total_kontaktat_klinik, na.rm = TRUE)
+
+N <- c(antal, possfol, approv, before, sent, collect, contprelet, cont)
+
+ut <- data.frame(N)
+
+rownames(ut) <- c("Total ARRs","Possible to follow up", "Approved letters","Preletter contact",
+                  "Letter sent", "Letter collected", "Contacted after letter", "Contacted total")
+colnames(ut) <- c("N")
+
+kable(ut)
+
+```
+
+
+## Lund
+
+```{r possibility3b, echo=FALSE, warning=FALSE, fig.height=3}
+
+Individinfo_urval <- Individinfo[Individinfo$studieort_individ %in% c("C"),]
+
+antal <- sum(Individinfo_urval$a_antal_totalt_berord_slaktingar, na.rm = TRUE)
+possfol <- sum(Individinfo_urval$aa_ant_som_kan_foljas_upp, na.rm = TRUE)
+approv <- sum(Individinfo_urval$bb_antal_godkanda_directbrev_tilluppfoljbara, na.rm = TRUE)
+before <- sum(Individinfo_urval$b_antal_hort_av_sig_innan_brev, na.rm = TRUE)
+noadress <-  sum(Individinfo_urval$b_antal_saknar_adress, na.rm = TRUE)
+sent <-  sum(Individinfo_urval$c_antal_brev_faktiskt_skickade, na.rm = TRUE)
+collect <-  sum(Individinfo_urval$d_antal_brev_hamtade_fr_postombud, na.rm = TRUE)
+contprelet <- sum(Individinfo_urval$dd_antal_totalt_brevmottagare_kontaktat_efterbrev, na.rm = TRUE)
+cont <- sum(Individinfo_urval$e_antal_total_kontaktat_klinik, na.rm = TRUE)
+
+N <- c(antal, possfol, approv, before, sent, collect, contprelet, cont)
+
+ut <- data.frame(N)
+
+rownames(ut) <- c("Total ARRs","Possible to follow up", "Approved letters","Preletter contact",
+                  "Letter sent", "Letter collected", "Contacted after letter", "Contacted total")
+
+
+colnames(ut) <- c("N")
+
+kable(ut)
+
+
+```
+
+## Female relatives
+
+
+```{r possibility4a1a, echo=FALSE, warning=FALSE, fig.height=3}
+
+Individinfo_urval <- Individinfo
+
+antal <- sum(Individinfo_urval$a_antal_kvinnor_berorda, na.rm = TRUE)
+possfol <- sum(Individinfo_urval$aa_ant_kvinnor_som_kan_foljas_upp, na.rm = TRUE)
+approv <- sum(Individinfo_urval$bb_antal_godkanda_directbrev_tilluppfoljbara_kvinnor, na.rm = TRUE)
+before <- sum(Individinfo_urval$b_antal_kvinnor_av_sig_innan_brev, na.rm = TRUE)
+sent <-  sum(Individinfo_urval$c_antal_brev_faktiskt_skickade_tillkvinnor, na.rm = TRUE)
+collect <-  sum(Individinfo_urval$d_antal_brev_hamtade_fr_postombud_avkvinnor, na.rm = TRUE)
+contprelet <- sum(as.numeric(Individinfo_urval$dd_antal_kvinnor_brevmottagare_kontaktat_efterbrev), na.rm = TRUE)
+cont <- sum(Individinfo_urval$e_antal_kvinnor_kontaktat_klinik, na.rm = TRUE)
+
+N <- c(antal, possfol, approv, before, sent, collect, contprelet, cont)
+
+ut <- data.frame(N)
+
+rownames(ut) <- c("Total ARRs","Possible to follow up", "Approved letters","Preletter contact",
+                  "Letter sent", "Letter collected", "Contacted after letter", "Contacted total")
+colnames(ut) <- c("N")
+
+kable(ut)
+
+
+```
+
+
+## Male relatives
+
+
+```{r possibility41bb, echo=FALSE, warning=FALSE, fig.height=3}
+
+Individinfo_urval <- Individinfo
+
+antal <- sum(Individinfo_urval$a_antal_man_berorda, na.rm = TRUE)
+possfol <- sum(Individinfo_urval$aa_ant_man_som_kan_foljas_upp, na.rm = TRUE)
+approv <- sum(Individinfo_urval$bb_antal_godkanda_directbrev_tilluppfoljbara_man, na.rm = TRUE)
+before <- sum(Individinfo_urval$b_antal_man_av_sig_innan_brev, na.rm = TRUE)
+sent <-  sum(Individinfo_urval$c_antal_brev_faktiskt_skickade_tillman, na.rm = TRUE)
+collect <-  sum(Individinfo_urval$d_antal_brev_hamtade_fr_postombud_avman, na.rm = TRUE)
+contprelet <- sum(as.numeric(Individinfo_urval$dd_antal_man_brevmottagare_kontaktat_efterbrev), na.rm = TRUE)
+cont <- sum(Individinfo_urval$e_antal_man_kontaktat_klinik, na.rm = TRUE)
+
+N <- c(antal, possfol, approv, before, sent, collect, contprelet, cont)
+
+ut <- data.frame(N)
+
+rownames(ut) <- c("Total ARRs","Possible to follow up", "Approved letters","Preletter contact",
+                  "Letter sent", "Letter collected", "Contacted after letter", "Contacted total")
+colnames(ut) <- c("N")
+
+kable(ut)
+
+```
+
+
+
+## 1st degree relatives
+
+
+```{r possibility5a1c, echo=FALSE, warning=FALSE, fig.height=3}
+
+Individinfo_urval <- Individinfo
+
+antal <- sum(Individinfo_urval$aa_ant_fgr, na.rm = TRUE)
+possfol <- sum(Individinfo_urval$aa_ant_fgr_som_kan_foljas_upp, na.rm = TRUE)
+approv <- sum(Individinfo_urval$bb_antal_godkanda_directbrev_tilluppfoljbara_fgr, na.rm = TRUE)
+before <- sum(Individinfo_urval$b_antal_fgr_av_sig_innan_brev, na.rm = TRUE)
+sent <-  sum(Individinfo_urval$c_antal_brev_faktiskt_skickade_tillfgr, na.rm = TRUE)
+collect <-  sum(Individinfo_urval$d_antal_brev_hamtade_fr_postombud_avfgr, na.rm = TRUE)
+contprelet <- sum(as.numeric(Individinfo_urval$dd_antal_fdr_brevmottagare_kontaktat_efterbrev), na.rm = TRUE)
+cont <- sum(Individinfo_urval$ee_ant_fdr_kontaktat, na.rm = TRUE)
+
+N <- c(antal, possfol, approv, before, sent, collect, contprelet, cont)
+
+ut <- data.frame(N)
+
+rownames(ut) <- c("Total ARRs","Possible to follow up", "Approved letters","Preletter contact",
+                  "Letter sent", "Letter collected", "Contacted after letter", "Contacted total")
+colnames(ut) <- c("N")
+
+kable(ut)
+
+
+```
+
+
+
+## >=2nd degree relatives
+
+
+```{r possibility5b1c, echo=FALSE, warning=FALSE, fig.height=3}
+
+Individinfo_urval <- Individinfo
+
+antal <- sum(Individinfo_urval$aa_ant_ovriga, na.rm = TRUE)
+possfol <- sum(Individinfo_urval$aa_ant_ovriga_som_kan_foljas_upp, na.rm = TRUE)
+approv <- sum(Individinfo_urval$bb_antal_godkanda_directbrev_tilluppfoljbara_ovriga, na.rm = TRUE)
+before <- sum(Individinfo_urval$b_antal_ovriga_av_sig_innan_brev, na.rm = TRUE)
+sent <-  sum(Individinfo_urval$c_antal_brev_faktiskt_skickade_tillovriga, na.rm = TRUE)
+collect <-  sum(Individinfo_urval$d_antal_brev_hamtade_fr_postombud_avovriga, na.rm = TRUE)
+contprelet <- sum(as.numeric(Individinfo_urval$dd_antal_ovriga_brevmottagare_kontaktat_efterbrev), na.rm = TRUE)
+cont <- sum(Individinfo_urval$ee_ant_ovrigt_kontaktat, na.rm = TRUE)
+
+N <- c(antal, possfol, approv, before, sent, collect, contprelet, cont)
+
+ut <- data.frame(N)
+
+rownames(ut) <- c("Total ARRs","Possible to follow up", "Approved letters","Preletter contact",
+                  "Letter sent", "Letter collected", "Contacted after letter", "Contacted total")
+colnames(ut) <- c("N")
+
+kable(ut)
+
+
+```
+
+
+
+
+
+```{r aterstallgrunddata, echo=FALSE, warning=FALSE, fig.height=3}
+
+#go back to full dataset
+Individinfo <- temp_df
+
+
+```
+
+
+
+
+
+\pagebreak
+
+# Generalized linear mixed models
+
+
+```{r glm1a, echo=FALSE, warning=FALSE, fig.height=3}
+
+Individinfo_urval <- Individinfo
+
+Individinfo_urval$family <- substr(Individinfo_urval$directid,1,4)
+Individinfo_urval$aa_ant_som_kan_foljas_upp <- as.numeric(Individinfo_urval$aa_ant_som_kan_foljas_upp)
+Individinfo_urval$e_antal_total_kontaktat_klinik <- as.numeric(Individinfo_urval$e_antal_total_kontaktat_klinik)
+Individinfo_urval$e_antal_total_kontaktat_klinik[Individinfo_urval$e_antal_total_kontaktat_klinik %in% NA] <- 0
+Individinfo_urval$aa_ant_kvinnor_som_kan_foljas_upp <- as.numeric(Individinfo_urval$aa_ant_kvinnor_som_kan_foljas_upp)
+Individinfo_urval$aa_ant_man_som_kan_foljas_upp <- as.numeric(Individinfo_urval$aa_ant_man_som_kan_foljas_upp)
+Individinfo_urval$ejkontakt <- Individinfo_urval$aa_ant_som_kan_foljas_upp-
+  Individinfo_urval$e_antal_total_kontaktat_klinik
+Individinfo_urval$ejkontaktq <- Individinfo_urval$aa_ant_kvinnor_som_kan_foljas_upp - 
+  Individinfo_urval$e_antal_kvinnor_kontaktat_klinik
+Individinfo_urval$ejkontaktm <- Individinfo_urval$aa_ant_man_som_kan_foljas_upp - 
+  Individinfo_urval$e_antal_man_kontaktat_klinik
+
+
+#familjevektor
+family <- c()
+for(i in 1:length(unique(Individinfo_urval$family))){
+temp <- rep(Individinfo_urval$family[i], each=
+              Individinfo_urval$aa_ant_som_kan_foljas_upp[
+                Individinfo_urval$family %in% Individinfo_urval$family[i]])
+
+family <- c(family, temp)
+}
+
+#studiegruppsvektor
+group <- c()
+for(i in 1:length(unique(Individinfo_urval$family))){
+temp <- rep(Individinfo_urval$studiegrupp_crf1[i], each=
+              Individinfo_urval$aa_ant_som_kan_foljas_upp[
+                Individinfo_urval$family %in% Individinfo_urval$family[i]])
+
+group <- c(group, temp)
+}
+
+#individvektor
+tempN <- sum(Individinfo_urval$aa_ant_som_kan_foljas_upp)
+individual <- 1:tempN 
+
+#släkting kön vektor
+relative_sex <- c()
+for(i in 1:length(Individinfo_urval$directid)){
+  
+  if(Individinfo_urval$aa_ant_kvinnor_som_kan_foljas_upp[i] %in% NA &
+     !(Individinfo_urval$aa_ant_man_som_kan_foljas_upp[i] %in% NA) ){
+   temp <- c(rep("men", Individinfo_urval$aa_ant_man_som_kan_foljas_upp[
+  Individinfo_urval$directid %in% Individinfo_urval$directid[i]]) ) 
+  }
+  if(Individinfo_urval$aa_ant_man_som_kan_foljas_upp[i] %in% NA &
+      !(Individinfo_urval$aa_ant_kvinnor_som_kan_foljas_upp[i] %in% NA) ){
+   temp <- c(rep("women", Individinfo_urval$aa_ant_kvinnor_som_kan_foljas_upp[
+  Individinfo_urval$directid %in% Individinfo_urval$directid[i]]) ) } 
+  if(!(Individinfo_urval$aa_ant_man_som_kan_foljas_upp[i] %in% NA) &
+     !(Individinfo_urval$aa_ant_kvinnor_som_kan_foljas_upp[i] %in% NA) ){
+  temp <- c( rep("women", Individinfo_urval$aa_ant_kvinnor_som_kan_foljas_upp[
+  Individinfo_urval$directid %in% Individinfo_urval$directid[i]]),
+  rep("men", Individinfo_urval$aa_ant_man_som_kan_foljas_upp[
+  Individinfo_urval$directid %in% Individinfo_urval$directid[i]]) ) }
+  
+relative_sex <- c(relative_sex, temp)
+}
+
+#degree of kinship vektor
+relative_degree <- c()
+for(i in 1:length(Individinfo_urval$directid)){
+  
+  if(Individinfo_urval$aa_ant_ovriga_som_kan_foljas_upp[i] %in% NA &
+     !(Individinfo_urval$aa_ant_fgr_som_kan_foljas_upp[i] %in% NA) ){
+   temp <- c(rep("1st", Individinfo_urval$aa_ant_fgr_som_kan_foljas_upp[
+  Individinfo_urval$directid %in% Individinfo_urval$directid[i]]) ) 
+  }
+  if(Individinfo_urval$aa_ant_fgr_som_kan_foljas_upp[i] %in% NA &
+      !(Individinfo_urval$aa_ant_ovriga_som_kan_foljas_upp[i] %in% NA) ){
+   temp <- c(rep("2nd etc", Individinfo_urval$aa_ant_ovriga_som_kan_foljas_upp[
+  Individinfo_urval$directid %in% Individinfo_urval$directid[i]]) ) 
+   } 
+  if(!(Individinfo_urval$aa_ant_fgr_som_kan_foljas_upp[i] %in% NA) &
+     !(Individinfo_urval$aa_ant_ovriga_som_kan_foljas_upp[i] %in% NA) ){
+  temp <- c( rep("1st", Individinfo_urval$aa_ant_fgr_som_kan_foljas_upp[
+  Individinfo_urval$directid %in% Individinfo_urval$directid[i]]),
+  rep("2nd etc", Individinfo_urval$aa_ant_ovriga_som_kan_foljas_upp[
+  Individinfo_urval$directid %in% Individinfo_urval$directid[i]]) ) }
+  
+relative_degree <- c(relative_degree, temp)
+}
+
+
+#index kön vektor
+index_sex <- c()
+for(i in 1:length(Individinfo_urval$directid)){
+  temp <- c( rep(Individinfo_urval$sex[
+    Individinfo_urval$directid %in% Individinfo_urval$directid[i]], 
+                 Individinfo_urval$aa_ant_som_kan_foljas_upp[
+  Individinfo_urval$directid %in% Individinfo_urval$directid[i]]) )
+index_sex <- c(index_sex, temp)
+}
+
+
+#kontaktvektor
+contact <- c()
+for(i in 1:length(Individinfo_urval$directid)){
+  temp <- c( 
+      rep("yes", Individinfo_urval$e_antal_kvinnor_kontaktat_klinik[
+  Individinfo_urval$directid %in% Individinfo_urval$directid[i]]),
+  rep("no", Individinfo_urval$ejkontaktq[
+    Individinfo_urval$directid %in% Individinfo_urval$directid[i]]),
+   rep("yes", Individinfo_urval$e_antal_man_kontaktat_klinik[
+  Individinfo_urval$directid %in% Individinfo_urval$directid[i]]),
+  rep("no", Individinfo_urval$ejkontaktm[
+    Individinfo_urval$directid %in% Individinfo_urval$directid[i]])) 
+  
+  
+contact <- c(contact, temp)
+}
+
+
+#studieort vektor
+ort <- c()
+for(i in 1:length(Individinfo_urval$directid)){
+  temp <- c( rep(Individinfo_urval$studieort_individ[
+    Individinfo_urval$directid %in% Individinfo_urval$directid[i]], 
+                 Individinfo_urval$aa_ant_som_kan_foljas_upp[
+  Individinfo_urval$directid %in% Individinfo_urval$directid[i]]) )
+ort <- c(ort, temp)
+}
+
+
+#åldersgrupp vektor
+age <- c()
+for(i in 1:length(Individinfo_urval$directid)){
+  temp <- c( rep(Individinfo_urval$age_cat[
+    Individinfo_urval$directid %in% Individinfo_urval$directid[i]], 
+                 Individinfo_urval$aa_ant_som_kan_foljas_upp[
+  Individinfo_urval$directid %in% Individinfo_urval$directid[i]]) )
+age <- c(age, temp)
+}
+
+#family diagnosis vektor
+famdia <- c()
+for(i in 1:length(Individinfo_urval$directid)){
+  temp <- c( rep(Individinfo_urval$familjediagnos_crf1[
+    Individinfo_urval$directid %in% Individinfo_urval$directid[i]], 
+                 Individinfo_urval$aa_ant_som_kan_foljas_upp[
+  Individinfo_urval$directid %in% Individinfo_urval$directid[i]]) )
+famdia <- c(famdia, temp)
+}
+
+
+
+
+#sammanfoga till data
+glmdata <- data.frame(family, individual, index_sex, relative_sex, relative_degree,
+                      contact, group, ort, age, famdia)
+
+glmdata$family <- factor(glmdata$family)
+glmdata$contact <- factor(glmdata$contact)
+glmdata$group <- factor(glmdata$group, levels = c("Kontroll","Intervention"))
+glmdata$index_sex <- factor(glmdata$index_sex)
+glmdata$relative_sex <- factor(glmdata$relative_sex)
+glmdata$relative_degree <- factor(glmdata$relative_degree)
+glmdata$ort <- factor(glmdata$ort, levels=c("A","B","C"))
+glmdata$age <- factor(glmdata$age, levels = c("younger", "older"))
+glmdata$famdia <- factor(glmdata$famdia)
+
+
+
+
+```
+
+
+## Univariable GLMM 
+
+Allowing treatment effect to vary by family.
+
+Logistic link function.
+
+### Allocation
+
+```{r glm2a, echo=FALSE, warning=FALSE, fig.height=3}
+
+
+#  allowing treatment effect to vary by family
+model_extended <- glmer(contact ~ group +  (1 + group | family), 
+                        data = glmdata, 
+                        family = binomial(link = "logit"))
+
+#summary(model_extended)
+result <- model_parameters(model_extended, exponentiate = TRUE, digits = 2)   # Exponentiate to get odds ratios
+print(result[2,])
+
+```
+
+
+### Study site
+
+```{r glm2b, echo=FALSE, warning=FALSE, fig.height=3}
+
+
+#  allowing treatment effect to vary by family
+model_extended <- glmer(contact ~ ort +  (1 + group | family), 
+                        data = glmdata, 
+                        family = binomial(link = "logit"))
+
+#summary(model_extended)
+result <- model_parameters(model_extended, exponentiate = TRUE, digits = 2)   # Exponentiate to get odds ratios
+print(result[2:3,])
+
+```
+
+
+### Patients sex
+
+```{r glm2c, echo=FALSE, warning=FALSE, fig.height=3}
+
+
+#  allowing treatment effect to vary by family
+model_extended <- glmer(contact ~ index_sex +  (1 + group | family), 
+                        data = glmdata, 
+                        family = binomial(link = "logit"))
+
+#summary(model_extended)
+result <- model_parameters(model_extended, exponentiate = TRUE, digits = 2)   # Exponentiate to get odds ratios
+print(result[2,])
+
+```
+
+### Patients age
+
+```{r glm2d, echo=FALSE, warning=FALSE, fig.height=3}
+
+
+#  allowing treatment effect to vary by family
+model_extended <- glmer(contact ~ age +  (1 + group | family), 
+                        data = glmdata, 
+                        family = binomial(link = "logit"))
+
+#summary(model_extended)
+result <- model_parameters(model_extended, exponentiate = TRUE, digits = 2)   # Exponentiate to get odds ratios
+print(result[2,])
+
+```
+
+### Family diagnosis
+
+```{r glm2e, echo=FALSE, warning=FALSE, fig.height=3}
+
+
+#  allowing treatment effect to vary by family
+model_extended <- glmer(contact ~ famdia +  (1 + group | family), 
+                        data = glmdata, 
+                        family = binomial(link = "logit"))
+
+#summary(model_extended)
+result <- model_parameters(model_extended, exponentiate = TRUE, digits = 2)   # Exponentiate to get odds ratios
+print(result[2,])
+
+```
+
+
+### ARR sex
+
+```{r glm2f, echo=FALSE, warning=FALSE, fig.height=3}
+
+
+#  allowing treatment effect to vary by family
+model_extended <- glmer(contact ~ relative_sex +  (1 + group | family), 
+                        data = glmdata[1:835,], 
+                        family = binomial(link = "logit"))
+
+#summary(model_extended)
+result <- model_parameters(model_extended, exponentiate = TRUE, digits = 2)   # Exponentiate to get odds ratios
+print(result[2,])
+
+```
+
+
+
+### ARR degree of kinship
+
+
+```{r glm2g, echo=FALSE, warning=FALSE, fig.height=3}
+
+
+
+#  allowing treatment effect to vary by family
+model_extended <- glmer(contact ~ relative_degree +  (1 + group | family), 
+                        data = glmdata, 
+                        family = binomial(link = "logit"))
+
+#summary(model_extended)
+result <- model_parameters(model_extended, exponentiate = TRUE, digits = 2)   # Exponentiate to get odds ratios
+print(result[2,])
+
+```
+ 
+
+\pagebreak
+
+## Multivariable GLMM - full model
+
+Allowing treatment effect to vary by family. Logistic link function.
+
+### Raw model
+
+```{r glm3a, echo=FALSE, warning=FALSE, fig.height=3}
+
+
+#  allowing treatment effect to vary by family
+model_extended <- glmer(contact ~ group + index_sex + relative_sex + relative_degree +
+                          ort + age + famdia + (1 + group | family), 
+                        data = glmdata, family = binomial(link = "logit"))
+
+summary(model_extended)
+ 
+
+```
+
+### Results table
+
+```{r glm3b, echo=FALSE, warning=FALSE, fig.height=3}
+
+result <- model_parameters(model_extended, exponentiate = TRUE, digits = 2)   # Exponentiate to get odds ratios
+print(result)
+
+```
+
+### Results plot
+
+Not showing the intercept. References are control, man, man, 1st degree,
+A-site, younger and *BRCA1, BRCA2, PALB2* respectively.
+
+```{r glm3c, echo=FALSE, warning=FALSE, fig.height=3}
+
+
+
+# Extract coefficients and confidence intervals
+fixed_effects <- data.frame(
+  Term = names(fixef(model_extended)),
+  Estimate = fixef(model_extended),
+  Lower = confint(model_extended, parm = "beta_", method = "Wald")[, 1],
+  Upper = confint(model_extended, parm = "beta_", method = "Wald")[, 2]
+)
+
+# Exclude the intercept
+fixed_effects <- fixed_effects[fixed_effects$Term != "(Intercept)", ]
+
+# Add odds ratio transformation
+fixed_effects$Odds_Ratio <- exp(fixed_effects$Estimate)
+fixed_effects$Lower_OR <- exp(fixed_effects$Lower)
+fixed_effects$Upper_OR <- exp(fixed_effects$Upper)
+
+# change labels on y-axis
+fixed_effects$Term <- c("Allocation: intervention", "Patient sex: female", "ARR sex: female",
+                        "Degree of kinship: 2nd or more distant", 
+                        "Study site: B", "Study site: C", "Patient age: >=50",
+                        "Family diagnosis: Lynch syndrome")
+
+
+fixed_effects$Odds_Ratio2 <- round(fixed_effects$Odds_Ratio,digits=2)
+
+# Create forest plot
+forestplot::forestplot(
+  labeltext = cbind(fixed_effects$Term, fixed_effects$Odds_Ratio2),
+  mean = fixed_effects$Odds_Ratio,
+  lower = fixed_effects$Lower_OR,
+  upper = fixed_effects$Upper_OR,
+   zero = 1, 
+  boxsize = 0.2,  # Set constant square size
+#  lab_gp = gpar(fontsize = 10),  # Set font size for x-axis title
+#  axis_gp = gpar(fontsize = 10),  # Set font size for x-axis numbers
+# txt_gp = fpTxtGp(ticks=gpar(cex=1)),
+  title = ""
+)
+
+
+```
+
+
+
+
+
+
+
+
+
