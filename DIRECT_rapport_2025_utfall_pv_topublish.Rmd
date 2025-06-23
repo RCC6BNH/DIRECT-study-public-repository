@@ -731,19 +731,19 @@ gintervention <- c(
   sum(Individinfo$e_antal_total_kontaktat_klinik[Individinfo$studiegrupp_crf1 %in% "Intervention"]),
   sum(Individinfo$aa_ant_som_kan_foljas_upp[Individinfo$studiegrupp_crf1 %in% "Intervention"]) )
 
-gumea <- c( 
+ga <- c( 
   sum(Individinfo$e_antal_total_kontaktat_klinik[Individinfo$studieort_individ %in% "A" &
                                                    Individinfo$studiegrupp_crf1 %in% "Intervention"]),
   sum(Individinfo$aa_ant_som_kan_foljas_upp[Individinfo$studieort_individ %in% "A" &
                                                    Individinfo$studiegrupp_crf1 %in% "Intervention"]) )
 
-ggtb <- c( 
+gb <- c( 
   sum(Individinfo$e_antal_total_kontaktat_klinik[Individinfo$studieort_individ %in% "B" &
                                                    Individinfo$studiegrupp_crf1 %in% "Intervention"]),
   sum(Individinfo$aa_ant_som_kan_foljas_upp[Individinfo$studieort_individ %in% "B" &
                                                    Individinfo$studiegrupp_crf1 %in% "Intervention"]) )
 
-glund <- c( 
+gc <- c( 
   sum(Individinfo$e_antal_total_kontaktat_klinik[Individinfo$studieort_individ %in% "C" &
                                                    Individinfo$studiegrupp_crf1 %in% "Intervention"]),
   sum(Individinfo$aa_ant_som_kan_foljas_upp[Individinfo$studieort_individ %in% "C" &
@@ -802,13 +802,13 @@ gdegree2etc <- c(
   sum(Individinfo$aa_ant_ovriga_som_kan_foljas_upp[Individinfo$studiegrupp_crf1 %in% "Intervention"]) )
 
 
-ut <- rbind( gintervention, gumea, ggtb, glund, 
+ut <- rbind( gintervention, ga, gb, gc, 
             gwoman, gman, gyoung, gold,
             gbrca, glynch, 
             gARRmen, gARRwomen, gdegree1, gdegree2etc )
 
 chisqpvalue <- c("","",
-                 "", "", round(chisq.test(rbind(gumea, ggtb, glund))$p.value,digits=2),
+                 "", "", round(chisq.test(rbind(ga, gb, gc))$p.value,digits=2),
                  "",round(chisq.test(rbind(gwoman, gman))$p.value,digits=2),
                  "",round(chisq.test(rbind(gyoung, gold))$p.value,digits=2),
                  "",round(chisq.test(rbind(gbrca, glynch))$p.value,digits=2),
@@ -829,7 +829,7 @@ ut <- cbind(ut, percentage)
 
 kable(ut)
 
-rm( gintervention, gumea, ggtb, glund, 
+rm( gintervention, ga, gb, gc, 
             gwoman, gman, gyoung, gold,
             gbrca, glynch, 
             gARRmen, gARRwomen, gdegree1, gdegree2etc, chisqpvalue )
@@ -846,19 +846,19 @@ gcontrol <- c(
   sum(Individinfo$aa_ant_som_kan_foljas_upp[Individinfo$studiegrupp_crf1 %in% "Kontroll"]) )
 
 
-gumea <- c( 
+ga <- c( 
   sum(Individinfo$e_antal_total_kontaktat_klinik[Individinfo$studieort_individ %in% "A" &
                                                    Individinfo$studiegrupp_crf1 %in% "Kontroll"]),
   sum(Individinfo$aa_ant_som_kan_foljas_upp[Individinfo$studieort_individ %in% "A" &
                                                    Individinfo$studiegrupp_crf1 %in% "Kontroll"]) )
 
-ggtb <- c( 
+gb <- c( 
   sum(Individinfo$e_antal_total_kontaktat_klinik[Individinfo$studieort_individ %in% "B" &
                                                    Individinfo$studiegrupp_crf1 %in% "Kontroll"]),
   sum(Individinfo$aa_ant_som_kan_foljas_upp[Individinfo$studieort_individ %in% "B" &
                                                    Individinfo$studiegrupp_crf1 %in% "Kontroll"]) )
 
-glund <- c( 
+gc <- c( 
   sum(Individinfo$e_antal_total_kontaktat_klinik[Individinfo$studieort_individ %in% "C" &
                                                    Individinfo$studiegrupp_crf1 %in% "Kontroll"]),
   sum(Individinfo$aa_ant_som_kan_foljas_upp[Individinfo$studieort_individ %in% "C" &
@@ -917,13 +917,13 @@ gdegree2etc <- c(
   sum(Individinfo$aa_ant_ovriga_som_kan_foljas_upp[Individinfo$studiegrupp_crf1 %in% "Kontroll"]) )
 
 
-ut <- rbind(gcontrol,  gumea, ggtb, glund, 
+ut <- rbind(gcontrol,  ga, gb, gc, 
             gwoman, gman, gyoung, gold,
             gbrca, glynch, 
             gARRmen, gARRwomen, gdegree1, gdegree2etc )
 
 chisqpvalue <- c("","",
-                 "", "", round(chisq.test(rbind(gumea, ggtb, glund))$p.value,digits=2),
+                 "", "", round(chisq.test(rbind(ga, gb, gc))$p.value,digits=2),
                  "",round(chisq.test(rbind(gwoman, gman))$p.value,digits=2),
                  "",round(chisq.test(rbind(gyoung, gold))$p.value,digits=2),
                  "",round(chisq.test(rbind(gbrca, glynch))$p.value,digits=2),
@@ -944,7 +944,7 @@ ut <- cbind(ut, percentage)
 
 kable(ut)
 
-rm(gcontrol, gumea, ggtb, glund, 
+rm(gcontrol, ga, gb, gc, 
             gwoman, gman, gyoung, gold,
             gbrca, glynch, 
             gARRmen, gARRwomen, gdegree1, gdegree2etc, chisqpvalue )
@@ -1389,7 +1389,7 @@ fisher.test(ut[1:2,1:2])
 ```
 
 
-### Umeå (A)
+### A
 
 
 ```{r analysis1gc, echo=FALSE, warning=FALSE, fig.height=2.5}
@@ -1425,7 +1425,7 @@ fisher.test(ut[1:2,1:2])
 ```
 
 
-### Göteborg (B)
+### B
 
 
 ```{r analysis1gd, echo=FALSE, warning=FALSE, fig.height=2.5}
@@ -1460,7 +1460,7 @@ fisher.test(ut[1:2,1:2])
 
 ```
 
-### Lund (C)
+### C
 
 
 ```{r analysis1ge, echo=FALSE, warning=FALSE, fig.height=2.5}
@@ -2073,7 +2073,7 @@ kable(ut)
 ```
 
 
-## Umeå
+## A
 
 ```{r possibility2a, echo=FALSE, warning=FALSE, fig.height=3}
 
@@ -2103,7 +2103,7 @@ kable(ut)
 ```
 
 
-## Göteborg
+## B
 
 ```{r possibility2b, echo=FALSE, warning=FALSE, fig.height=3}
 
@@ -2132,7 +2132,7 @@ kable(ut)
 ```
 
 
-## Lund
+## C
 
 ```{r possibility3b, echo=FALSE, warning=FALSE, fig.height=3}
 
